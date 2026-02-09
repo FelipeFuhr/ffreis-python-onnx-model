@@ -1,0 +1,11 @@
+FROM ffreis/base
+
+USER root
+
+WORKDIR /run
+
+COPY --chown=appuser:appgroup scripts/entrypoint.sh entrypoint.sh
+
+RUN chmod 0750 /run/entrypoint.sh
+
+USER appuser:appgroup
