@@ -12,9 +12,7 @@ USER appuser:appgroup
 
 COPY --chown=appuser:appgroup app/ .
 
-USER appuser:appgroup
-
-RUN python3 -m pip install --user -r requirements.txt
+# No dependencies to install for now (requirements.txt is just a placeholder)
 
 ENTRYPOINT ["python3"]
 CMD ["main.py"]
