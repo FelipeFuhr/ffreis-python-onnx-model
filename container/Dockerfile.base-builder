@@ -1,0 +1,19 @@
+FROM ffreis/base
+
+USER root
+
+RUN getent group appgroup >/dev/null || groupadd -g 10001 appgroup
+RUN id -u appuser >/dev/null 2>&1 || useradd -u 10001 -g appgroup -m -s /usr/sbin/nologin appuser
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1
+ENV PIP_NO_CACHE_DIR=1
+
+USER appuser:appgroup

@@ -1,0 +1,23 @@
+FROM ffreis/base-runner
+
+ARG APP_NAME=__APP_NAME__
+ENV APP_NAME=${APP_NAME}
+
+USER root
+
+WORKDIR /run
+
+# Install Python runtime
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    python3 && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy app files
+COPY --chown=appuser:appgroup app/ ./
+
+RUN chmod 0750 /run/*.py
+
+USER appuser:appgroup
+
+ENTRYPOINT ["/run/entrypoint.sh"]

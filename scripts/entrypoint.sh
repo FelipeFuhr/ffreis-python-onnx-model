@@ -1,0 +1,10 @@
+#!/bin/sh
+
+APP="${PWD}/main.py"
+
+if [ ! -f "${APP}" ]; then
+    echo "ERROR: main.py does not exist at ${APP}" >&2
+    exit 1
+fi
+
+exec python3 "${APP}"
