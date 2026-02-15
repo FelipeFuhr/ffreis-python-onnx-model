@@ -1,0 +1,61 @@
+name: examples
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  run-example-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Run logistic regression example
+        run: |
+          set -euo pipefail
+          uv run --extra examples python -m examples.train_and_serve_logistic_regression
+
+      - name: Run random forest example
+        run: |
+          set -euo pipefail
+          uv run --extra examples python -m examples.train_and_serve_random_forest
+
+      - name: Run neural network example
+        run: |
+          set -euo pipefail
+          uv run --extra examples python -m examples.train_and_serve_neural_network
+
+  build-example-containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build base example image
+        run: docker build -f container/Dockerfile.example-base -t example-base .
+
+      - name: Build and run logistic regression container
+        run: |
+          set -euo pipefail
+          docker build -f container/Dockerfile.example-logistic-regression -t example-logistic .
+          docker run --rm example-logistic
+
+      - name: Build and run random forest container
+        run: |
+          set -euo pipefail
+          docker build -f container/Dockerfile.example-random-forest -t example-random-forest .
+          docker run --rm example-random-forest
+
+      - name: Build and run neural network container
+        run: |
+          set -euo pipefail
+          docker build -f container/Dockerfile.example-neural-network -t example-neural-network .
+          docker run --rm example-neural-network

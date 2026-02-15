@@ -1,0 +1,23 @@
+FROM python:3.13-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/src
+
+COPY pyproject.toml /app/
+COPY src /app/src
+COPY examples /app/examples
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+      fastapi \
+      httpx \
+      numpy \
+      onnx \
+      onnxruntime \
+      pydantic \
+      scikit-learn \
+      skl2onnx \
+      uvicorn

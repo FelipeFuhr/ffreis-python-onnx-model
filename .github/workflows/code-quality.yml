@@ -50,8 +50,8 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest \
-            -m "unit" \
-            --cov=onnx_model_serving \
+            tests/unit_tests \
+            --cov=src \
             --cov-report=xml:coverage.xml \
             --cov-report=term \
             --cov-fail-under=0

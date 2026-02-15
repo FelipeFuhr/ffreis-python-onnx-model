@@ -1,0 +1,3 @@
+FROM example-base
+
+ENTRYPOINT ["python", "-m", "examples.train_and_serve_neural_network"]

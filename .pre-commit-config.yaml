@@ -39,23 +39,18 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
-    hooks:
-      - id: black
-
   - repo: local
     hooks:
       - id: mypy
         name: mypy
-        entry: python3 -m mypy src
+        entry: .venv/bin/python -m mypy src
         language: system
         pass_filenames: false
-        stages: [pre-push]
+        stages: [pre-commit, pre-push]
 
       - id: pytest-unit
         name: pytest (unit)
-        entry: python3 -m pytest -q -m unit tests
+        entry: .venv/bin/python -m pytest -q tests/unit_tests
         language: system
         pass_filenames: false
         stages: [pre-push]
