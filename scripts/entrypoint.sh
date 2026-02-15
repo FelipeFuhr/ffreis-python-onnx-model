@@ -1,6 +1,6 @@
 #!/bin/sh
 
-APP="${PWD}/main.py"
+APP="/run/main.py"
 
 if [ ! -f "${APP}" ]; then
     echo "ERROR: main.py does not exist at ${APP}" >&2

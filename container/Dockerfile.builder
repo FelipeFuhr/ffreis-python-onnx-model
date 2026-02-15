@@ -14,7 +14,7 @@ COPY --chown=appuser:appgroup tests /build/tests
 
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --upgrade pip && \
-    /opt/venv/bin/pip install -e ".[dev]"
+    /opt/venv/bin/pip install ".[dev]"
 
 # Run tests to ensure everything works
 RUN /opt/venv/bin/pytest -q
