@@ -33,6 +33,8 @@ concurrency:
 jobs:
   deepsource:
     runs-on: ubuntu-latest
+    env:
+      DEEPSOURCE_DSN: ${{ secrets.DEEPSOURCE_DSN }}
 
     steps:
       - uses: actions/checkout@v6
@@ -55,20 +57,20 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest \
-            -m "unit or integration" \
-            --cov=onnx_model_serving \
+            tests/unit_tests tests/integration_tests \
+            --cov=src \
             --cov-report=xml:coverage.xml \
             --cov-report=term
           test -s coverage.xml
 
       - name: Upload coverage to DeepSource
-        if: ${{ secrets.DEEPSOURCE_DSN != '' }}
+        if: ${{ env.DEEPSOURCE_DSN != '' }}
         uses: deepsourcelabs/test-coverage-action@4284bb73a04adb39faaa6bfcc2d0e3dd137ffed7
         with:
           key: python
           coverage-file: coverage.xml
-          dsn: ${{ secrets.DEEPSOURCE_DSN }}
+          dsn: ${{ env.DEEPSOURCE_DSN }}
 
       - name: DeepSource DSN not configured
-        if: ${{ secrets.DEEPSOURCE_DSN == '' }}
+        if: ${{ env.DEEPSOURCE_DSN == '' }}
         run: echo "DEEPSOURCE_DSN is not set. Add it as a repository secret."

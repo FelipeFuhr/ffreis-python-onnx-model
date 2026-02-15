@@ -41,6 +41,8 @@ requirements.lock
 # Coverage
 .coverage
 .coverage.*
+coverage.xml
+coverage-*.xml
 htmlcov/
 .pytest_cache/
 
