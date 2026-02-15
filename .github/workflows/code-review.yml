@@ -1,0 +1,48 @@
+name: Code Review (Lint + Test)
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "Makefile"
+      - ".github/workflows/code-review.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "Makefile"
+      - ".github/workflows/code-review.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Lint + test
+        run: |
+          set -euo pipefail
+          make env
+          make build-local
+          make lint
+          make test

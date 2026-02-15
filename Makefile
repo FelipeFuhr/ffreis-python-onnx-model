@@ -7,6 +7,7 @@
 SHELL := /usr/bin/env bash
 
 PYTHON ?= python3
+VENV ?= .venv
 CONTAINER_COMMAND ?= podman
 
 PREFIX ?= ffreis
@@ -26,9 +27,6 @@ RUNNER_IMAGE := $(PREFIX)/runner
 # ------------------------------------------------------------------------------
 # Derived values
 # ------------------------------------------------------------------------------
-
-# Extract app name (for Python, we use "app")
-APP_NAME := app
 
 # Extract digests from digests.env (computed once)
 BASE_IMAGE_VALUE := $(shell grep '^BASE_IMAGE=' $(CONTAINER_DIR)/digests.env | cut -d= -f2)
@@ -98,55 +96,86 @@ build-base-runner: build-base ## Build base-runner image
 
 .PHONY: build-runner
 build-runner: build-base-runner build-builder ## Build runner image (minimal Python runtime)
-	$(CONTAINER_COMMAND) build -f $(CONTAINER_DIR)/Dockerfile.runner -t $(RUNNER_IMAGE) $(BASE_DIR)
+	$(CONTAINER_COMMAND) build -f $(CONTAINER_DIR)/Dockerfile.runner -t $(RUNNER_IMAGE) $(BASE_DIR) \
+		--build-arg BUILDER_IMAGE="$(BUILDER_IMAGE)"
 
 .PHONY: build-images
 build-images: build-base build-base-builder build-builder build-base-runner build-runner ## Build all images (may be slow)
 
 .PHONY: build
-build: build-images ## Build everything (images + app artifact + runner)
+build: build-images ## Build all container images
 
 # ------------------------------------------------------------------------------
-# App (local) targets
+# Python (local) targets
 # ------------------------------------------------------------------------------
 
-.PHONY: build-app-local
-build-app-local: ## Build app locally (no containers)
-	$(MAKE) -C app build
+.PHONY: env
+env: ## Create local virtual environment
+	$(PYTHON) -m venv $(VENV)
+	@echo "Activate with: . $(VENV)/bin/activate"
+
+.PHONY: build-local
+build-local: env ## Install project and dev dependencies
+	$(VENV)/bin/pip install --upgrade pip
+	$(VENV)/bin/pip install -e ".[dev]"
 
 .PHONY: run-app
 run-app: ## Run the runner container
 	$(CONTAINER_COMMAND) run $(RUNNER_IMAGE)
 
 .PHONY: run
-run: run-app ## Alias: run the app
+run: ## Run app locally
+	$(VENV)/bin/python main.py
+
+.PHONY: run-container
+run-container: run-app ## Alias: run the app in container
 
 .PHONY: fmt
 fmt: ## Format Python code
-	$(MAKE) -C app fmt
+	$(VENV)/bin/black .
+	$(VENV)/bin/ruff format .
 
 .PHONY: fmt-check
 fmt-check: ## Check Python formatting
-	$(MAKE) -C app fmt-check
+	$(VENV)/bin/black --check .
+	$(VENV)/bin/ruff format --check .
 
 .PHONY: lint
-lint: fmt-check ## Run formatting check
+lint: fmt-check ## Run linting + static typing
+	$(VENV)/bin/ruff check .
+	$(VENV)/bin/mypy src
 
 .PHONY: test
-test: ## Run tests
-	$(MAKE) -C app test
+test: ## Run all tests
+	$(VENV)/bin/pytest -q
+
+.PHONY: test-unit
+test-unit: ## Run unit tests
+	$(VENV)/bin/pytest -q -m "unit"
+
+.PHONY: test-integration
+test-integration: ## Run integration tests
+	$(VENV)/bin/pytest -q -m "integration and not e2e"
+
+.PHONY: test-e2e
+test-e2e: ## Run e2e tests
+	$(VENV)/bin/pytest -q -m "e2e"
+
+.PHONY: coverage
+coverage: ## Run tests with coverage output
+	$(VENV)/bin/pytest \
+		-q \
+		--cov=onnx_model_serving \
+		--cov-report=term \
+		--cov-report=xml:coverage.xml
 
 # ------------------------------------------------------------------------------
 # Cleaning
 # ------------------------------------------------------------------------------
 
-.PHONY: clean-app
-clean-app: ## Clean Python build artifacts
-	$(MAKE) -C app clean
-
 .PHONY: clean-repo
-clean-repo: clean-app ## Clean repo build outputs
-	rm -rf build
+clean-repo: ## Clean repo build outputs
+	rm -rf $(VENV) build __pycache__ .pytest_cache .coverage htmlcov *.pyc coverage.xml
 
 .PHONY: clean-base
 clean-base: ## Remove base image

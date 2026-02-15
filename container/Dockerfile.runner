@@ -1,4 +1,6 @@
+ARG BUILDER_IMAGE=ffreis/builder
 FROM ffreis/base-runner
+ARG BUILDER_IMAGE
 
 USER root
 
@@ -10,11 +12,13 @@ RUN apt-get update && \
     python3 && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy only the necessary application files from builder
-COPY --chown=appuser:appgroup app/*.py ./
-COPY --chown=appuser:appgroup app/pyproject.toml ./
+# Copy app runtime and venv from builder image.
+COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /opt/venv /opt/venv
+COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /build/*.py /run/
+COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /build/pyproject.toml /run/
+COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /build/scripts/entrypoint.sh /run/
 
-RUN chmod 0750 /run/*.py
+RUN chmod 0750 /run/*.py /run/entrypoint.sh
 
 USER appuser:appgroup
 

@@ -1,0 +1,79 @@
+name: Code Quality (Sonar)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "sonar-project.properties"
+      - ".github/workflows/code-quality.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "sonar-project.properties"
+      - ".github/workflows/code-quality.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sonarqube:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Generate coverage for Sonar
+
+        run: |
+          set -euo pipefail
+          python -m pytest \
+            -m "unit" \
+            --cov=onnx_model_serving \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term \
+            --cov-fail-under=0
+          test -s coverage.xml
+
+      - name: Resolve Sonar metadata
+        run: |
+          set -euo pipefail
+          echo "SONAR_PROJECT_KEY=${{ vars.SONAR_PROJECT_KEY || 'FelipeFuhr_ffreis-python-onnx-model-serving' }}" >> "$GITHUB_ENV"
+          echo "SONAR_ORGANIZATION=${{ vars.SONAR_ORGANIZATION || 'felipefuhr' }}" >> "$GITHUB_ENV"
+
+      - name: SonarQube Scan
+        uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9
+        with:
+          args: >
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.projectName=ffreis-python-onnx-model-serving
+            -Dsonar.sources=src
+            -Dsonar.tests=tests
+            -Dsonar.python.version=3.13
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

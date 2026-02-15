@@ -1,0 +1,108 @@
+name: Container Vulnerability Scan (Grype)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "container/**"
+      - "scripts/**"
+      - "Makefile"
+      - ".github/workflows/grype.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "container/**"
+      - "scripts/**"
+      - "Makefile"
+      - ".github/workflows/grype.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  grype:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Podman
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Build images (local)
+        run: |
+          set -euo pipefail
+          CONTAINER_COMMAND=podman make build
+
+      - name: Install Grype
+        run: |
+          set -euo pipefail
+          PINNED_COMMIT="c6a67581ab4e7aa494351b919326ad6606af3010"
+          SCRIPT_URL="https://raw.githubusercontent.com/anchore/grype/${PINNED_COMMIT}/install.sh"
+          mkdir -p ./bin
+          curl --fail --show-error --silent --location \
+            --proto '=https' --proto-redir '=https' \
+            "$SCRIPT_URL" -o /tmp/grype-install.sh
+          grep -q "grype" /tmp/grype-install.sh
+          sh /tmp/grype-install.sh -b ./bin
+          ./bin/grype version
+
+      - name: Grype scan (SARIF)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts grype-results
+          images=(ffreis/base ffreis/base-builder ffreis/builder ffreis/base-runner ffreis/runner)
+
+          for image in "${images[@]}"; do
+            name="${image##*/}"
+            tar="artifacts/${name}.tar"
+            out="grype-results/${name}.sarif"
+
+            podman save -o "$tar" "$image"
+            test -s "$tar"
+
+            if ./bin/grype "oci-archive:${tar}" -o sarif --file "$out" --fail-on high; then
+              :
+            else
+              ./bin/grype "docker-archive:${tar}" -o sarif --file "$out" --fail-on high
+            fi
+
+            test -s "$out"
+            rm -f "$tar"
+          done
+
+      - name: Upload Grype SARIF (per image)
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
+        run: |
+          set -euo pipefail
+          for f in grype-results/*.sarif; do
+            name="$(basename "$f" .sarif)"
+            echo "Uploading $f with category grype-$name"
+            sarif_payload="$(gzip -c "$f" | base64 | tr -d '\n')"
+            gh api \
+              -X POST \
+              /repos/${{ github.repository }}/code-scanning/sarifs \
+              -f sarif="${sarif_payload}" \
+              -f commit_sha="${{ github.sha }}" \
+              -f ref="${{ github.ref }}"
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}

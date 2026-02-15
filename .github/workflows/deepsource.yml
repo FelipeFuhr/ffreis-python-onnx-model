@@ -1,0 +1,74 @@
+name: DeepSource
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - ".deepsource.toml"
+      - ".github/workflows/deepsource.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - ".deepsource.toml"
+      - ".github/workflows/deepsource.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deepsource:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Generate coverage report
+
+        run: |
+          set -euo pipefail
+          python -m pytest \
+            -m "unit or integration" \
+            --cov=onnx_model_serving \
+            --cov-report=xml:coverage.xml \
+            --cov-report=term
+          test -s coverage.xml
+
+      - name: Upload coverage to DeepSource
+        if: ${{ secrets.DEEPSOURCE_DSN != '' }}
+        uses: deepsourcelabs/test-coverage-action@4284bb73a04adb39faaa6bfcc2d0e3dd137ffed7
+        with:
+          key: python
+          coverage-file: coverage.xml
+          dsn: ${{ secrets.DEEPSOURCE_DSN }}
+
+      - name: DeepSource DSN not configured
+        if: ${{ secrets.DEEPSOURCE_DSN == '' }}
+        run: echo "DEEPSOURCE_DSN is not set. Add it as a repository secret."

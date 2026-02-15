@@ -8,8 +8,8 @@ A minimal guide to building Python applications with Docker using multi-stage bu
 
 This project demonstrates a **multi-stage Docker build** for Python that:
 
-1. **Stage 1 (Builder)**: Installs dependencies with pip, runs tests, and generates a lock file for reproducibility
-2. **Stage 2 (Runtime)**: Copies only the necessary application files to a clean, minimal image
+1. **Stage 1 (Builder)**: Creates an isolated virtual environment, installs dependencies, runs tests, and generates a lock file for reproducibility
+2. **Stage 2 (Runtime)**: Copies only the necessary application files plus the built virtual environment to a minimal image
 
 ## Quick Start
 
@@ -38,10 +38,10 @@ This project uses an **incremental multi-image approach** optimized for Python d
 **Image Layers:**
 
 1. **Base (`ffreis/base`)**: Lightweight Ubuntu 26.04 base image with unprivileged user
-2. **Base Builder (`ffreis/base-builder`)**: Adds Python, pip, and build tools to the base
-3. **Builder (`ffreis/builder`)**: Installs dependencies, runs tests, generates requirements.lock for reproducibility
+2. **Base Builder (`ffreis/base-builder`)**: Adds Python and virtualenv tooling to the base
+3. **Builder (`ffreis/builder`)**: Builds `/opt/venv`, runs tests, generates requirements.lock for reproducibility
 4. **Base Runner (`ffreis/base-runner`)**: Minimal runtime base with entrypoint script
-5. **Runner (`ffreis/runner`)**: Contains only the application code and Python runtime
+5. **Runner (`ffreis/runner`)**: Contains application code, Python runtime, and copied `/opt/venv`
 
 **Benefits:**
 
@@ -68,7 +68,8 @@ make build-images            # Build all images at once
 ### Run targets
 
 ```bash
-make run-app                 # Run the app in runner container
+make run                     # Run app locally
+make run-container           # Run the app in runner container
 ```
 
 ### Cleanup targets
@@ -96,14 +97,17 @@ make clean-all               # Remove all images
 
 ```
 .
-├── app/                    # Python application
-│   ├── main.py            # Application entry point
-│   ├── lib.py             # Library functions
-│   ├── pyproject.toml     # Python project configuration & dependencies
-│   ├── requirements.txt   # Placeholder for manual dependencies
-│   ├── tests/            # Test suite
-│   │   └── test_lib.py   # Unit tests
-│   └── Makefile          # App-level build targets
+├── main.py                 # Application entry point
+├── pyproject.toml          # Python project configuration & dependencies
+├── requirements.txt        # Optional pinned dependencies
+├── src/
+│   └── onnx_model_serving/
+│       ├── __init__.py
+│       └── lib.py
+├── tests/
+│   ├── unit_tests/
+│   ├── integration_tests/
+│   └── e2e_tests/
 ├── container/             # Docker multi-stage build files
 │   ├── digests.env       # Base image digest pinning
 │   ├── Dockerfile.base
@@ -114,26 +118,48 @@ make clean-all               # Remove all images
 ├── scripts/              # Helper scripts
 │   └── entrypoint.sh    # Container entrypoint
 ├── Makefile             # Main build orchestration
+├── .pre-commit-config.yaml
+├── .deepsource.toml
+├── sonar-project.properties
 └── .github/
     └── workflows/
-        └── docker-build.yml  # CI workflow
+        ├── build-all.yml
+        ├── code-quality.yml
+        ├── code-review.yml
+        ├── commit-checks.yml
+        ├── coverage.yml
+        ├── deepsource.yml
+        ├── docker-build.yml
+        ├── e2e.yml
+        ├── grype.yml
+        ├── integration.yml
+        ├── lint.yml
+        └── trivy.yml
 
 ## Development Workflow
 
 1. **Add dependencies**: Update `pyproject.toml` with new dependencies
-2. **Run locally**: Test your changes locally with `python3 app/main.py`
+2. **Run locally**:
+   - `make env`
+   - `make build-local`
+   - `make run`
 3. **Build images**: Run `make build-images` to build and test in containers
-4. **Tests run automatically**: Builder stage runs `pytest -v` - build fails if tests fail
+4. **Tests run automatically**: Builder stage runs `pytest` - build fails if tests fail
 5. **Lock file generated**: `requirements.lock` is created for reproducible deployments
 6. **Deploy**: Use `ffreis/runner` image in production - it's minimal and secure
 
 ## Testing
 
-Tests are written in `app/tests/` and run automatically during the Docker build process. The build will fail if any tests fail, ensuring you never deploy broken code.
+Tests are split by scope in `tests/unit_tests`, `tests/integration_tests`, and `tests/e2e_tests`. They run automatically during Docker builder image creation.
 
 ```bash
 # Run tests locally
-cd app && pytest -v
+make env
+make build-local
+make test-unit
+make test-integration
+make test-e2e
+make test
 
 # Tests also run during: make build-builder
 ```

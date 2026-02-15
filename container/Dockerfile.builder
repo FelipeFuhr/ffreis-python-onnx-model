@@ -8,17 +8,21 @@ RUN mkdir -p /build \
 
 WORKDIR /build
 
-COPY --chown=appuser:appgroup app/ .
+COPY --chown=appuser:appgroup pyproject.toml requirements.txt main.py /build/
+COPY --chown=appuser:appgroup src /build/src
+COPY --chown=appuser:appgroup tests /build/tests
+COPY --chown=appuser:appgroup scripts /build/scripts
 
-# Install dependencies as root to avoid permission issues with Python 3.13
-RUN pip install --break-system-packages -e ".[dev]"
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install ".[dev]"
 
 # Run tests to ensure everything works
-RUN pytest -v
+RUN /opt/venv/bin/pytest -q
 
 # Generate lock file for reproducibility
-RUN pip freeze > requirements.lock && chown appuser:appgroup requirements.lock
+RUN /opt/venv/bin/pip freeze > requirements.lock && chown appuser:appgroup requirements.lock
 
 USER appuser:appgroup
 
-ENTRYPOINT ["python3", "main.py"]
+ENTRYPOINT ["/opt/venv/bin/python", "main.py"]
