@@ -43,14 +43,14 @@ repos:
     hooks:
       - id: mypy
         name: mypy
-        entry: env UV_CACHE_DIR=/tmp/uv-cache uv run --extra dev --with mypy mypy src tests examples
+        entry: .venv/bin/python -m mypy src tests examples
         language: system
         pass_filenames: false
         stages: [pre-commit, pre-push]
 
       - id: pytest-unit
         name: pytest (unit)
-        entry: python3 -m pytest -q -m unit tests
+        entry: .venv/bin/python -m pytest -q -m unit tests
         language: system
         pass_filenames: false
         stages: [pre-push]
