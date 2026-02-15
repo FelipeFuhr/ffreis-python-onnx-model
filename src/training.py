@@ -186,14 +186,14 @@ class TrainingWorkflow:
     def run(self: TrainingWorkflow) -> None:
         """Execute the full training workflow."""
         self._validate_supported_model_type()
-        path = find_training_data_file(self.settings)
-        dataframe = load_training_table(path)
+        path = self.repository.find_training_data_file()
+        dataframe = self.repository.load_training_table(path)
 
-        model, n_features = fit_sklearn_model(self.settings, dataframe)
-        save_sklearn_model(self.settings, model)
+        model, n_features = self.sklearn_training_service.fit_model(dataframe)
+        self.sklearn_training_service.save_model(model)
 
         if self.settings.export_onnx:
-            export_model_to_onnx(self.settings, model, n_features)
+            self.sklearn_training_service.export_model_to_onnx(model, n_features)
 
         log.info("Training complete. Model dir: %s", self.settings.model_dir)
 
