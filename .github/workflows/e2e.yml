@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest -q tests/e2e_tests \
-            --cov=onnx_model_serving \
+            --cov=src \
             --cov-report=xml:coverage-e2e.xml \
             --cov-report=term \
             --cov-fail-under=0

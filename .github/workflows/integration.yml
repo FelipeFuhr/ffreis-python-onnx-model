@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest -q tests/integration_tests \
-            --cov=onnx_model_serving \
+            --cov=src \
             --cov-report=xml:coverage-integration.xml \
             --cov-report=term \
             --cov-fail-under=0

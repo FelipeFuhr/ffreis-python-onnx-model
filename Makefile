@@ -165,7 +165,7 @@ test-e2e: ## Run e2e tests
 coverage: ## Run tests with coverage output
 	$(VENV)/bin/pytest \
 		-q \
-		--cov=onnx_model_serving \
+		--cov=src \
 		--cov-report=term \
 		--cov-report=xml:coverage.xml
 
