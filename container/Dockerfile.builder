@@ -11,6 +11,7 @@ WORKDIR /build
 COPY --chown=appuser:appgroup pyproject.toml requirements.txt main.py /build/
 COPY --chown=appuser:appgroup src /build/src
 COPY --chown=appuser:appgroup tests /build/tests
+COPY --chown=appuser:appgroup scripts /build/scripts
 
 RUN python3 -m venv /opt/venv && \
     /opt/venv/bin/pip install --upgrade pip && \

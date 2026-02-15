@@ -16,7 +16,7 @@ RUN apt-get update && \
 COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /opt/venv /opt/venv
 COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /build/*.py /run/
 COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /build/pyproject.toml /run/
-COPY --chown=appuser:appgroup scripts/entrypoint.sh /run/
+COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /build/scripts/entrypoint.sh /run/
 
 RUN chmod 0750 /run/*.py /run/entrypoint.sh
 
