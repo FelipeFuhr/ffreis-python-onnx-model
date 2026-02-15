@@ -37,11 +37,11 @@ class OnnxAdapter(BaseAdapter):
         onnxruntime_module = importlib.import_module("onnxruntime")
         session_options = onnxruntime_module.SessionOptions()
 
-        model_filename = os.path.basename(
-            self.settings.model_filename or "model.onnx"
-        )
+        model_filename = self.settings.model_filename
+        if model_filename:
+            model_filename = os.path.basename(model_filename)
         if not model_filename:
-            raise ValueError("Invalid ONNX model filename")
+            model_filename = "model.onnx"
         path = os.path.join(self.settings.model_dir, model_filename)
         if not os.path.exists(path):
             raise FileNotFoundError(f"ONNX model not found: {path}")
