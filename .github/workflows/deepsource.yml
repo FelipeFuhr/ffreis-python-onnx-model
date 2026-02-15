@@ -55,7 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pytest \
-            -m "unit or integration" \
+            tests/unit_tests tests/integration_tests \
             --cov=onnx_model_serving \
             --cov-report=xml:coverage.xml \
             --cov-report=term

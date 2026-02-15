@@ -193,6 +193,44 @@ class TestAppEndpoints:
         assert r.json() == [0, 0]
 
     @pytest.mark.asyncio
+    async def test_invocations_include_trace_correlation_headers(
+        self: Self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify invocation responses include trace correlation headers."""
+        monkeypatch.setenv("OTEL_ENABLED", "false")
+        monkeypatch.setenv("PROMETHEUS_ENABLED", "false")
+
+        import application as application_module
+
+        monkeypatch.setattr(
+            application_module,
+            "load_adapter",
+            lambda settings: type(
+                "A",
+                (object,),
+                {"is_ready": lambda self: True, "predict": lambda self, inp: [0, 0]},
+            )(),
+        )
+        monkeypatch.setattr(
+            application_module,
+            "get_current_trace_identifiers",
+            lambda: {"trace_id": "a" * 32, "span_id": "b" * 16},
+        )
+        application = create_application(Settings())
+        transport = httpx.ASGITransport(app=application)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            response = await client.post(
+                "/invocations",
+                content=b"1,2,3\n4,5,6\n",
+                headers={"Content-Type": "text/csv", "Accept": "application/json"},
+            )
+            assert response.status_code == 200
+            assert response.headers.get("x-trace-id") == "a" * 32
+            assert response.headers.get("x-span-id") == "b" * 16
+
+    @pytest.mark.asyncio
     async def test_invocations_respects_max_body_bytes(
         self: Self, monkeypatch: pytest.MonkeyPatch
     ) -> None:

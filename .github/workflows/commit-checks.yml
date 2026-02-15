@@ -42,4 +42,4 @@ jobs:
         run: .venv/bin/pre-commit run --all-files --show-diff-on-failure
 
       - name: Unit tests
-        run: .venv/bin/python -m pytest -q -m unit tests
+        run: .venv/bin/python -m pytest -q tests/unit_tests

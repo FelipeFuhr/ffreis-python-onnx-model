@@ -8,6 +8,8 @@ import pytest
 from config import Settings
 from telemetry import (
     _parse_headers,
+    get_current_trace_identifiers,
+    inject_current_trace_context,
     instrument_fastapi_application,
     setup_telemetry,
 )
@@ -140,6 +142,7 @@ def test_setup_telemetry_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
 
     trace_rec = _Recorder()
     req_rec = _Recorder()
+    httpx_rec = _Recorder()
     log_rec = _Recorder()
     resource_rec = _Recorder()
     provider_rec = _Recorder()
@@ -219,6 +222,11 @@ def test_setup_telemetry_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(
         telemetry_module,
+        "HTTPXClientInstrumentor",
+        lambda: types.SimpleNamespace(instrument=lambda: httpx_rec.add()),
+    )
+    monkeypatch.setattr(
+        telemetry_module,
         "LoggingInstrumentor",
         lambda: types.SimpleNamespace(
             instrument=lambda set_logging_format: log_rec.add(
@@ -233,6 +241,7 @@ def test_setup_telemetry_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert resource_rec.calls
     assert provider_rec.calls
     assert req_rec.calls
+    assert httpx_rec.calls
     assert log_rec.calls
 
 
@@ -291,3 +300,56 @@ def test_instrument_fastapi_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) 
     )
     instrument_fastapi_application(Settings(), object())
     assert rec.calls == []
+
+
+def test_get_current_trace_identifiers_returns_empty_without_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validate current trace identifiers are empty without trace module."""
+    import telemetry as telemetry_module
+
+    monkeypatch.setattr(telemetry_module, "trace", None)
+    assert get_current_trace_identifiers() == {}
+
+
+def test_get_current_trace_identifiers_returns_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validate current trace identifiers are rendered as lowercase hex."""
+    import telemetry as telemetry_module
+
+    span_context = types.SimpleNamespace(
+        trace_id=0x1234,
+        span_id=0xABCD,
+        is_valid=True,
+    )
+    fake_span = types.SimpleNamespace(get_span_context=lambda: span_context)
+    monkeypatch.setattr(
+        telemetry_module,
+        "trace",
+        types.SimpleNamespace(get_current_span=lambda: fake_span),
+    )
+
+    assert get_current_trace_identifiers() == {
+        "trace_id": "00000000000000000000000000001234",
+        "span_id": "000000000000abcd",
+    }
+
+
+def test_inject_current_trace_context_uses_propagator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validate active trace context injection populates provided carrier."""
+    import telemetry as telemetry_module
+
+    def _inject(carrier: dict[str, str]) -> None:
+        carrier["traceparent"] = "00-abc-def-01"
+
+    monkeypatch.setattr(
+        telemetry_module,
+        "propagate",
+        types.SimpleNamespace(inject=_inject),
+    )
+
+    carrier: dict[str, str] = {}
+    assert inject_current_trace_context(carrier) == {"traceparent": "00-abc-def-01"}

@@ -50,7 +50,7 @@ repos:
 
       - id: pytest-unit
         name: pytest (unit)
-        entry: .venv/bin/python -m pytest -q -m unit tests
+        entry: .venv/bin/python -m pytest -q tests/unit_tests
         language: system
         pass_filenames: false
         stages: [pre-push]

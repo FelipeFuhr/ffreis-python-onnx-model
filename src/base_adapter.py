@@ -60,7 +60,7 @@ def load_adapter(settings: Settings) -> BaseAdapter:
     if settings.model_type == "onnx" or os.path.exists(model_path):
         return OnnxAdapter(settings)
 
-    if settings.model_type in {"sklearn", "torch", "keras", "tf"}:
+    if settings.model_type and settings.model_type != "onnx":
         raise RuntimeError(
             f"MODEL_TYPE={settings.model_type} is not implemented in this package"
         )

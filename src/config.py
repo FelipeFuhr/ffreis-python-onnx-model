@@ -240,15 +240,3 @@ class Settings(BaseModel):
     onnx_dynamic_batch: bool = Field(
         default_factory=lambda: _env_bool("ONNX_DYNAMIC_BATCH", True)
     )
-
-    train_channel: str = Field(
-        default_factory=lambda: _env_str("SM_CHANNEL_TRAIN", "/opt/ml/input/data/train")
-    )
-    train_file: str = Field(default_factory=lambda: _env_str("TRAIN_FILE", ""))
-    train_target: str = Field(
-        default_factory=lambda: _env_str("TRAIN_TARGET", "target")
-    )
-    train_algorithm: str = Field(
-        default_factory=lambda: _env_str("TRAIN_ALGORITHM", "logreg").strip().lower()
-    )
-    export_onnx: bool = Field(default_factory=lambda: _env_bool("EXPORT_ONNX", False))

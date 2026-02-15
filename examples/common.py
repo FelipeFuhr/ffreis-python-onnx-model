@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import os
+import socket
+import subprocess
 import sys
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,9 +21,6 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPOSITORY_ROOT / "src"
 if str(SOURCE_ROOT) not in sys.path:
     sys.path.insert(0, str(SOURCE_ROOT))
-
-from application import create_application  # noqa: E402
-from config import Settings  # noqa: E402
 
 
 class ModelProtocol(Protocol):
@@ -152,70 +151,109 @@ def temporary_environment(overrides: dict[str, str]) -> Iterator[None]:
                 os.environ[key] = old_value
 
 
-async def run_inference_request(
-    model_directory: Path, rows: np.ndarray
-) -> tuple[int, int, int, list[object]]:
-    """Run an inference request through the real HTTP application.
+def _find_free_port() -> int:
+    """Allocate an available localhost TCP port.
+
+    Returns
+    -------
+    int
+        Free port number.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+@contextmanager
+def run_serving_process(model_directory: Path) -> Iterator[str]:
+    """Start serving API process and yield base URL.
 
     Parameters
     ----------
     model_directory : pathlib.Path
         Directory containing ``model.onnx``.
-    rows : numpy.ndarray
-        Feature rows used to build CSV invocation payload.
 
-    Returns
-    -------
-    tuple[int, int, int, list[object]]
-        ``(live_status, ready_status, invocations_status, predictions_json)``.
+    Yields
+    ------
+    str
+        Base URL for the running local serving API.
     """
-    payload = "\n".join(",".join(map(str, row.tolist())) for row in rows).encode(
-        "utf-8"
+    port = _find_free_port()
+    base_url = f"http://127.0.0.1:{port}"
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "SM_MODEL_DIR": str(model_directory),
+            "MODEL_TYPE": "onnx",
+            "OTEL_ENABLED": "false",
+            "PROMETHEUS_ENABLED": "false",
+            "CSV_HAS_HEADER": "false",
+            "DEFAULT_ACCEPT": "application/json",
+            "PYTHONPATH": str(SOURCE_ROOT),
+        }
     )
-    environment = {
-        "SM_MODEL_DIR": str(model_directory),
-        "MODEL_TYPE": "onnx",
-        "OTEL_ENABLED": "false",
-        "PROMETHEUS_ENABLED": "false",
-        "CSV_HAS_HEADER": "false",
-        "DEFAULT_ACCEPT": "application/json",
-    }
 
-    with temporary_environment(environment):
-        application = create_application(Settings())
-        transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
-        ) as client:
-            liveness_response = await client.get("/live")
-            if liveness_response.status_code != 200:
-                raise RuntimeError(
-                    f"Liveness failed with status={liveness_response.status_code}"
-                )
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "serving:application",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
+        ],
+        cwd=str(REPOSITORY_ROOT),
+        env=environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
 
-            readiness_response = await client.get("/ready")
-            if readiness_response.status_code != 200:
-                raise RuntimeError(
-                    f"Readiness failed with status={readiness_response.status_code}"
-                )
+    try:
+        _wait_until_server_ready(process, base_url)
+        yield base_url
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=5)
 
-            invocation_response = await client.post(
-                "/invocations",
-                content=payload,
-                headers={"Content-Type": "text/csv", "Accept": "application/json"},
-            )
-            if invocation_response.status_code != 200:
-                raise RuntimeError(
-                    "Invocation failed with "
-                    f"status={invocation_response.status_code}, "
-                    f"body={invocation_response.text}"
+
+def _wait_until_server_ready(process: subprocess.Popen[str], base_url: str) -> None:
+    """Wait until serving API responds to liveness check.
+
+    Parameters
+    ----------
+    process : subprocess.Popen[str]
+        Running serving process.
+    base_url : str
+        Local API base URL.
+    """
+    with httpx.Client(timeout=1.0) as client:
+        for _ in range(60):
+            exit_code = process.poll()
+            if exit_code is not None:
+                logs = process.stdout.read() if process.stdout is not None else ""
+                raise SystemExit(
+                    "FAIL: serving process exited before readiness "
+                    f"(exit_code={exit_code}). Logs:\n{logs}"
                 )
-            return (
-                liveness_response.status_code,
-                readiness_response.status_code,
-                invocation_response.status_code,
-                cast(list[object], invocation_response.json()),
-            )
+            try:
+                response = client.get(f"{base_url}/live")
+                if response.status_code == 200:
+                    return
+            except httpx.HTTPError:
+                pass
+            time.sleep(0.2)
+    raise SystemExit("FAIL: serving process did not become live in time.")
 
 
 def _to_label_vector(raw_predictions: list[object], expected_rows: int) -> np.ndarray:
@@ -281,8 +319,8 @@ def run_train_and_serve_demo(algorithm_name: str) -> ExampleResult:
     batch = features[:8]
     sklearn_predictions = np.asarray(model.predict(batch), dtype=np.float64).reshape(-1)
 
-    live_code, ready_code, invocation_code, raw_predictions = asyncio.run(
-        run_inference_request(model_directory, batch)
+    live_code, ready_code, invocation_code, raw_predictions = run_inference_request(
+        model_directory, batch
     )
     served_predictions = _to_label_vector(raw_predictions, expected_rows=batch.shape[0])
 
@@ -319,3 +357,45 @@ def run_train_and_serve_demo(algorithm_name: str) -> ExampleResult:
         request_row_count=int(batch.shape[0]),
         max_abs_difference=max_abs_difference,
     )
+
+
+def run_inference_request(
+    model_directory: Path, rows: np.ndarray
+) -> tuple[int, int, int, list[object]]:
+    """Run an inference request against the local serving process.
+
+    Parameters
+    ----------
+    model_directory : pathlib.Path
+        Directory containing ``model.onnx``.
+    rows : numpy.ndarray
+        Feature rows used to build CSV invocation payload.
+
+    Returns
+    -------
+    tuple[int, int, int, list[object]]
+        ``(live_status, ready_status, invocations_status, predictions_json)``.
+    """
+    payload_text = "\n".join(",".join(map(str, row.tolist())) for row in rows)
+    payload = payload_text.encode("utf-8")
+    with run_serving_process(model_directory) as base_url:
+        with httpx.Client(base_url=base_url, timeout=10.0) as client:
+            liveness_response = client.get("/live")
+            readiness_response = client.get("/ready")
+            invocation_response = client.post(
+                "/invocations",
+                content=payload,
+                headers={"Content-Type": "text/csv", "Accept": "application/json"},
+            )
+            if invocation_response.status_code != 200:
+                raise SystemExit(
+                    "FAIL: invocation failed "
+                    f"(status={invocation_response.status_code}, "
+                    f"body={invocation_response.text})."
+                )
+            return (
+                liveness_response.status_code,
+                readiness_response.status_code,
+                invocation_response.status_code,
+                cast(list[object], invocation_response.json()),
+            )

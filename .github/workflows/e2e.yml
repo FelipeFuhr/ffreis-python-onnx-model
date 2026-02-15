@@ -32,7 +32,7 @@ jobs:
       - name: Run e2e tests
         run: |
           set -euo pipefail
-          python -m pytest -q tests -m "e2e" \
+          python -m pytest -q tests/e2e_tests \
             --cov=onnx_model_serving \
             --cov-report=xml:coverage-e2e.xml \
             --cov-report=term \

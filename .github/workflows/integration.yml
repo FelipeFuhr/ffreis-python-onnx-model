@@ -32,7 +32,7 @@ jobs:
       - name: Run integration tests
         run: |
           set -euo pipefail
-          python -m pytest -q tests -m "integration and not e2e" \
+          python -m pytest -q tests/integration_tests \
             --cov=onnx_model_serving \
             --cov-report=xml:coverage-integration.xml \
             --cov-report=term \

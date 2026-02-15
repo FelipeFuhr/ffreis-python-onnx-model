@@ -22,38 +22,17 @@ jobs:
       - name: Run logistic regression example
         run: |
           set -euo pipefail
-          uv run \
-            --with httpx \
-            --with onnx \
-            --with onnxruntime \
-            --with pydantic \
-            --with scikit-learn \
-            --with skl2onnx \
-            python -m examples.train_and_serve_logistic_regression
+          uv run --extra examples python -m examples.train_and_serve_logistic_regression
 
       - name: Run random forest example
         run: |
           set -euo pipefail
-          uv run \
-            --with httpx \
-            --with onnx \
-            --with onnxruntime \
-            --with pydantic \
-            --with scikit-learn \
-            --with skl2onnx \
-            python -m examples.train_and_serve_random_forest
+          uv run --extra examples python -m examples.train_and_serve_random_forest
 
       - name: Run neural network example
         run: |
           set -euo pipefail
-          uv run \
-            --with httpx \
-            --with onnx \
-            --with onnxruntime \
-            --with pydantic \
-            --with scikit-learn \
-            --with skl2onnx \
-            python -m examples.train_and_serve_neural_network
+          uv run --extra examples python -m examples.train_and_serve_neural_network
 
   build-example-containers:
     runs-on: ubuntu-latest

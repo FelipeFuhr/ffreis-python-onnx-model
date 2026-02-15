@@ -13,10 +13,12 @@ from config import Settings
 log = logging.getLogger("otel")
 
 trace: object | None = None
+propagate: object | None = None
 OTLPSpanExporter: object | None = None
 FastAPIInstrumentor: object | None = None
 LoggingInstrumentor: object | None = None
 RequestsInstrumentor: object | None = None
+HTTPXClientInstrumentor: object | None = None
 Resource: object | None = None
 TracerProvider: object | None = None
 BatchSpanProcessor: object | None = None
@@ -25,16 +27,19 @@ BatchSpanProcessor: object | None = None
 def _load_optional_telemetry_components() -> None:
     """Load optional telemetry dependencies if available."""
     global trace
+    global propagate
     global OTLPSpanExporter
     global FastAPIInstrumentor
     global LoggingInstrumentor
     global RequestsInstrumentor
+    global HTTPXClientInstrumentor
     global Resource
     global TracerProvider
     global BatchSpanProcessor
 
     try:
         trace = importlib.import_module("opentelemetry").trace
+        propagate = importlib.import_module("opentelemetry.propagate")
         OTLPSpanExporter = importlib.import_module(
             "opentelemetry.exporter.otlp.proto.http.trace_exporter"
         ).OTLPSpanExporter
@@ -47,6 +52,9 @@ def _load_optional_telemetry_components() -> None:
         RequestsInstrumentor = importlib.import_module(
             "opentelemetry.instrumentation.requests"
         ).RequestsInstrumentor
+        HTTPXClientInstrumentor = importlib.import_module(
+            "opentelemetry.instrumentation.httpx"
+        ).HTTPXClientInstrumentor
         Resource = importlib.import_module("opentelemetry.sdk.resources").Resource
         TracerProvider = importlib.import_module(
             "opentelemetry.sdk.trace"
@@ -56,10 +64,12 @@ def _load_optional_telemetry_components() -> None:
         ).BatchSpanProcessor
     except Exception:  # pragma: no cover - optional dependency
         trace = None
+        propagate = None
         OTLPSpanExporter = None
         FastAPIInstrumentor = None
         LoggingInstrumentor = None
         RequestsInstrumentor = None
+        HTTPXClientInstrumentor = None
         Resource = None
         TracerProvider = None
         BatchSpanProcessor = None
@@ -83,6 +93,24 @@ class TraceModuleProtocol(Protocol):
 
     def set_tracer_provider(self: TraceModuleProtocol, provider: object) -> None:
         """Set tracer provider."""
+
+    def get_current_span(self: TraceModuleProtocol) -> object:
+        """Return current span."""
+
+
+class SpanContextProtocol(Protocol):
+    """Protocol for span context fields used for correlation."""
+
+    trace_id: int
+    span_id: int
+    is_valid: bool
+
+
+class SpanProtocol(Protocol):
+    """Protocol for current-span object used in correlation helpers."""
+
+    def get_span_context(self: SpanProtocol) -> SpanContextProtocol:
+        """Return span context."""
 
 
 class ResourceProtocol(Protocol):
@@ -143,6 +171,13 @@ class InstrumentorProtocol(Protocol):
         self: InstrumentorProtocol, set_logging_format: bool = False
     ) -> None:
         """Enable instrumentation."""
+
+
+class PropagatorModuleProtocol(Protocol):
+    """Protocol for OpenTelemetry propagator module."""
+
+    def inject(self: PropagatorModuleProtocol, carrier: dict[str, str]) -> None:
+        """Inject active context into the given carrier."""
 
 
 class FastApiInstrumentorProtocol(Protocol):
@@ -238,6 +273,8 @@ def setup_telemetry(settings: Settings) -> bool:
     )
 
     cast(InstrumentorFactoryProtocol, RequestsInstrumentor)().instrument()
+    if HTTPXClientInstrumentor is not None:
+        cast(InstrumentorFactoryProtocol, HTTPXClientInstrumentor)().instrument()
     cast(InstrumentorFactoryProtocol, LoggingInstrumentor)().instrument(
         set_logging_format=True
     )
@@ -260,3 +297,47 @@ def instrument_fastapi_application(settings: Settings, application: FastAPI) -> 
         cast(FastApiInstrumentorProtocol, FastAPIInstrumentor).instrument_app(
             application
         )
+
+
+def get_current_trace_identifiers() -> dict[str, str]:
+    """Return current trace/span identifiers when available.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping with ``trace_id`` and ``span_id`` when context is valid,
+        otherwise an empty dictionary.
+    """
+    if trace is None:
+        return {}
+    current_span = cast(TraceModuleProtocol, trace).get_current_span()
+    span_context = cast(SpanProtocol, current_span).get_span_context()
+    if not span_context.is_valid:
+        return {}
+    return {
+        "trace_id": format(span_context.trace_id, "032x"),
+        "span_id": format(span_context.span_id, "016x"),
+    }
+
+
+def inject_current_trace_context(
+    carrier: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Inject active trace context headers into a carrier.
+
+    Parameters
+    ----------
+    carrier : dict[str, str] | None, default=None
+        Target carrier to receive propagated headers.
+
+    Returns
+    -------
+    dict[str, str]
+        Carrier populated with trace propagation headers (for example
+        ``traceparent`` and ``tracestate``) when OpenTelemetry is available.
+    """
+    target_carrier = carrier or {}
+    if propagate is None:
+        return target_carrier
+    cast(PropagatorModuleProtocol, propagate).inject(target_carrier)
+    return target_carrier

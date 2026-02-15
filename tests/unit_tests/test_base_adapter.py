@@ -137,7 +137,7 @@ class TestBaseAdapter:
         None
             Does not return a value; assertions validate expected behavior.
         """
-        monkeypatch.setenv("MODEL_TYPE", "sklearn")
+        monkeypatch.setenv("MODEL_TYPE", "pytorch")
         settings = Settings()
         with pytest.raises(RuntimeError, match="not implemented"):
             load_adapter(settings)

@@ -151,15 +151,15 @@ test: ## Run all tests
 
 .PHONY: test-unit
 test-unit: ## Run unit tests
-	$(VENV)/bin/pytest -q -m "unit"
+	$(VENV)/bin/pytest -q tests/unit_tests
 
 .PHONY: test-integration
 test-integration: ## Run integration tests
-	$(VENV)/bin/pytest -q -m "integration and not e2e"
+	$(VENV)/bin/pytest -q tests/integration_tests
 
 .PHONY: test-e2e
 test-e2e: ## Run e2e tests
-	$(VENV)/bin/pytest -q -m "e2e"
+	$(VENV)/bin/pytest -q tests/e2e_tests
 
 .PHONY: coverage
 coverage: ## Run tests with coverage output

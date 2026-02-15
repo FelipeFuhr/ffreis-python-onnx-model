@@ -166,30 +166,30 @@ make test
 
 ## Model Examples
 
-The repository now includes train-and-serve examples for multiple model families:
+The repository includes advanced example scripts for multiple model families:
 
 - `examples/train_and_serve_logistic_regression.py`
 - `examples/train_and_serve_random_forest.py`
 - `examples/train_and_serve_neural_network.py`
 
-Each script performs the complete flow:
+Each script performs a local demonstration flow:
 
-1. Train the model on Iris data.
-2. Export the trained model to ONNX.
-3. Start the real HTTP application in-process.
+1. Build a model in Python (example-only dependency scope).
+2. Export that model to ONNX.
+3. Start the real HTTP inference application in a local subprocess.
 4. Call `/ready` and `/invocations`.
+5. Validate prediction parity and shut the server down.
+
+The core serving package remains inference-only (`model.onnx` + `/invocations`).
 
 Run them locally with `uv`:
 
 ```bash
-uv run --with httpx --with onnx --with onnxruntime --with pydantic --with scikit-learn --with skl2onnx \
-  python examples/train_and_serve_logistic_regression.py
+uv run --extra examples python -m examples.train_and_serve_logistic_regression
 
-uv run --with httpx --with onnx --with onnxruntime --with pydantic --with scikit-learn --with skl2onnx \
-  python examples/train_and_serve_random_forest.py
+uv run --extra examples python -m examples.train_and_serve_random_forest
 
-uv run --with httpx --with onnx --with onnxruntime --with pydantic --with scikit-learn --with skl2onnx \
-  python examples/train_and_serve_neural_network.py
+uv run --extra examples python -m examples.train_and_serve_neural_network
 ```
 
 ### Example Containers
@@ -212,3 +212,21 @@ docker run --rm example-neural-network
 ### CI Validation
 
 Workflow `.github/workflows/examples.yml` validates example scripts and containers on push and pull request.
+
+## Tracing and Context Propagation
+
+This service uses OpenTelemetry with OTLP export and stays backend-agnostic:
+
+- Inbound context extraction is handled by FastAPI instrumentation.
+- Outbound context propagation is enabled for `requests` and `httpx`.
+- Log correlation fields are added by OpenTelemetry logging instrumentation.
+- Invocation responses include `x-trace-id` and `x-span-id` headers when a valid span exists.
+
+Configure via environment variables:
+
+- `OTEL_ENABLED=true|false`
+- `OTEL_EXPORTER_OTLP_ENDPOINT=http://collector:4318/v1/traces`
+- `OTEL_EXPORTER_OTLP_HEADERS=k1=v1,k2=v2`
+- `OTEL_EXPORTER_OTLP_TIMEOUT=10`
+
+The active propagation format remains standards-based (W3C `traceparent`/`tracestate`), so the service can participate in distributed traces across different meshes and backends.

@@ -19,6 +19,7 @@ from config import Settings
 from input_output import format_output, parse_payload
 from parsed_types import ParsedInput
 from telemetry import (
+    get_current_trace_identifiers,
     get_tracer,
     instrument_fastapi_application,
     setup_telemetry,
@@ -288,7 +289,7 @@ class InferenceApplicationBuilder:
             return await self._run_inference(request=request, start_time=start_time)
         except ValueError as error:
             log.warning("Bad request: %s", error)
-            return JSONResponse({"error": "invalid_request"}, status_code=400)
+            return JSONResponse({"error": str(error)}, status_code=400)
         except Exception:
             log.exception("Inference failed")
             return JSONResponse({"error": "internal_server_error"}, status_code=500)
@@ -352,9 +353,11 @@ class InferenceApplicationBuilder:
             )
             span.set_attribute("response.content_type", output_content_type)
             span.set_attribute("latency_ms", (time.time() - start_time) * 1000.0)
-            return Response(
+            response = Response(
                 content=body, media_type=output_content_type, status_code=200
             )
+            self._attach_trace_correlation_headers(response)
+            return response
 
     def _resolve_content_preferences(
         self: InferenceApplicationBuilder, request: Request
@@ -389,6 +392,24 @@ class InferenceApplicationBuilder:
         """Run adapter prediction under model tracing span."""
         with tracer.start_as_current_span("model.predict"):
             return adapter.predict(parsed_input)
+
+    def _attach_trace_correlation_headers(
+        self: InferenceApplicationBuilder, response: Response
+    ) -> None:
+        """Attach trace identifiers to HTTP response headers.
+
+        Parameters
+        ----------
+        response : Response
+            Outgoing response object to annotate.
+        """
+        trace_identifiers = get_current_trace_identifiers()
+        trace_id = trace_identifiers.get("trace_id")
+        span_id = trace_identifiers.get("span_id")
+        if trace_id:
+            response.headers["x-trace-id"] = trace_id
+        if span_id:
+            response.headers["x-span-id"] = span_id
 
 
 def create_application(settings: Settings) -> FastAPI:
