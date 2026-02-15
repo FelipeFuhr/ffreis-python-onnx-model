@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import numpy as np
+import numpy.typing as npt
 
 from config import Settings
 from parsed_types import ParsedInput
@@ -15,19 +16,19 @@ def _strip_params(content_type: str) -> str:
     return (content_type or "").split(";")[0].strip().lower()
 
 
-def _dtype(name: str) -> np.dtype:
+def _dtype(name: str) -> npt.DTypeLike:
     """Map dtype aliases to NumPy dtype objects."""
     name = (name or "").strip().lower()
     if name in ("float64", "f64"):
-        return np.float64
+        return np.dtype(np.float64)
     if name in ("float32", "f32", ""):
-        return np.float32
+        return np.dtype(np.float32)
     if name in ("int64", "i64"):
-        return np.int64
+        return np.dtype(np.int64)
     if name in ("int32", "i32"):
-        return np.int32
+        return np.dtype(np.int32)
     if name in ("bool", "boolean"):
-        return np.bool_
+        return np.dtype(np.bool_)
     raise ValueError(f"Unsupported dtype: {name}")
 
 
@@ -88,8 +89,8 @@ def _split_ids_and_features(
     meta = None
 
     if settings.tabular_id_columns:
-        id_idx = _parse_col_selector(settings.tabular_id_columns, n_cols)
-        meta = {"ids": data[:, id_idx].tolist(), "id_columns": id_idx}
+        id_indexes = _parse_col_selector(settings.tabular_id_columns, n_cols)
+        meta = {"ids": data[:, id_indexes].tolist(), "id_columns": id_indexes}
 
     return feature_data, meta
 
@@ -138,22 +139,28 @@ def _parse_jsonl(payload: bytes) -> list[object]:
     return records
 
 
-def _load_json_map(s: str) -> dict | None:
+def _load_json_map(s: str) -> dict[str, str] | None:
     """Load JSON mapping string when provided."""
     s = (s or "").strip()
     if not s:
         return None
-    return json.loads(s)
+    loaded = json.loads(s)
+    if not isinstance(loaded, dict):
+        raise ValueError("Expected JSON object mapping")
+    mapping: dict[str, str] = {}
+    for key, value in loaded.items():
+        mapping[str(key)] = str(value)
+    return mapping
 
 
-def _infer_default_onnx_dtype(arr: np.ndarray) -> np.dtype:
+def _infer_default_onnx_dtype(arr: np.ndarray) -> npt.DTypeLike:
     """Infer default tensor dtype for ONNX inputs."""
     if np.issubdtype(arr.dtype, np.floating):
-        return np.float32
+        return np.dtype(np.float32)
     if np.issubdtype(arr.dtype, np.integer):
-        return np.int64
+        return np.dtype(np.int64)
     if np.issubdtype(arr.dtype, np.bool_):
-        return np.bool_
+        return np.dtype(np.bool_)
     return arr.dtype
 
 

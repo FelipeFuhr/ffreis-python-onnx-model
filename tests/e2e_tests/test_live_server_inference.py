@@ -4,6 +4,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import cast
 
 import httpx
 import pytest
@@ -30,7 +31,7 @@ def _write_tiny_sum_model(path: Path) -> None:
 def _free_port() -> int:
     sock = socket.socket()
     sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
+    port = cast(tuple[str, int], sock.getsockname())[1]
     sock.close()
     return port
 

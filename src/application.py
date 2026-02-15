@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import logging
 import time
 from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from types import TracebackType
+from typing import Literal, Protocol, cast
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -17,15 +19,17 @@ from config import Settings
 from input_output import format_output, parse_payload
 from parsed_types import ParsedInput
 from telemetry import (
+    get_tracer,
     instrument_fastapi_application,
     setup_telemetry,
-    trace,
 )
 
 log = logging.getLogger("byoc")
 
 try:
-    from prometheus_fastapi_instrumentator import Instrumentator
+    Instrumentator = importlib.import_module(
+        "prometheus_fastapi_instrumentator"
+    ).Instrumentator
 except Exception:  # pragma: no cover - optional dependency
     Instrumentator = None
 
@@ -41,7 +45,7 @@ class _NoopSpan:
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
         tb: TracebackType | None,
-    ) -> bool:
+    ) -> Literal[False]:
         return False
 
     def set_attribute(self: _NoopSpan, _k: str, _v: object) -> None:
@@ -54,15 +58,33 @@ def _noop_span() -> Iterator[_NoopSpan]:
     yield _NoopSpan()
 
 
-if trace is None:  # pragma: no cover - optional dependency
+class _SpanLike(Protocol):
+    """Span protocol required by this module."""
 
-    class _NoopTracer:
-        def start_as_current_span(self: _NoopTracer, _name: str) -> Iterator[_NoopSpan]:
-            return _noop_span()
+    def set_attribute(self: _SpanLike, key: str, value: object) -> None:
+        """Set span attribute."""
 
-    tracer = _NoopTracer()
-else:
-    tracer = trace.get_tracer("byoc")
+
+class _TracerLike(Protocol):
+    """Tracer protocol required by this module."""
+
+    def start_as_current_span(
+        self: _TracerLike, name: str
+    ) -> AbstractContextManager[_SpanLike]:
+        """Start a span context manager."""
+
+
+class _NoopTracer:
+    """No-op tracer used when OpenTelemetry is unavailable."""
+
+    def start_as_current_span(
+        self: _NoopTracer, _name: str
+    ) -> AbstractContextManager[_NoopSpan]:
+        """Return no-op span context manager."""
+        return _noop_span()
+
+
+tracer: _TracerLike = cast(_TracerLike, get_tracer("byoc") or _NoopTracer())
 
 
 def _batch_size(parsed: ParsedInput) -> int:
@@ -221,9 +243,12 @@ class InferenceApplicationBuilder:
         """
         try:
             self._ensure_adapter_loaded()
+            adapter = self._adapter
+            if adapter is None:
+                return PlainTextResponse("\n", status_code=500)
             return PlainTextResponse(
                 "\n",
-                status_code=200 if self._adapter.is_ready() else 500,
+                status_code=200 if adapter.is_ready() else 500,
             )
         except Exception:
             log.exception("Readiness check failed")
@@ -299,6 +324,9 @@ class InferenceApplicationBuilder:
             Successful inference response.
         """
         self._ensure_adapter_loaded()
+        adapter = self._adapter
+        if adapter is None:
+            raise RuntimeError("Adapter failed to load")
         content_type, accept = self._resolve_content_preferences(request)
         payload = getattr(request.state, "cached_body", None) or await request.body()
 
@@ -315,7 +343,7 @@ class InferenceApplicationBuilder:
             span.set_attribute("batch.size", batch_size)
             self._validate_batch_limit(batch_size)
 
-            predictions = self._predict(parsed_input)
+            predictions = self._predict(adapter, parsed_input)
             body, output_content_type = format_output(
                 predictions,
                 accept=accept,
@@ -353,11 +381,13 @@ class InferenceApplicationBuilder:
             )
 
     def _predict(
-        self: InferenceApplicationBuilder, parsed_input: ParsedInput
+        self: InferenceApplicationBuilder,
+        adapter: BaseAdapter,
+        parsed_input: ParsedInput,
     ) -> object:
         """Run adapter prediction under model tracing span."""
         with tracer.start_as_current_span("model.predict"):
-            return self._adapter.predict(parsed_input)
+            return adapter.predict(parsed_input)
 
 
 def create_application(settings: Settings) -> FastAPI:

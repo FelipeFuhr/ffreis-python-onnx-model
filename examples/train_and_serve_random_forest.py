@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from common import run_train_and_serve_demo
+from examples.common import run_train_and_serve_demo
 
 
 def main() -> None:

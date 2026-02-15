@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import os
+from typing import Protocol
 
 import numpy as np
 
@@ -24,15 +26,16 @@ class OnnxAdapter(BaseAdapter):
             Runtime settings used to discover and configure model loading.
         """
         self.settings = settings
-        self.session = None
-        self.input_names = None
-        self.output_names = None
-        self._output_map = None
+        self.session: _OnnxSessionProtocol | None = None
+        self.input_names: list[str] | None = None
+        self.output_names: list[str] | None = None
+        self._output_map: dict[str, str] | None = None
         self._load()
 
     def _load(self: OnnxAdapter) -> None:
         """Load ONNX model and runtime session from disk."""
-        import onnxruntime as ort
+        onnxruntime_module = importlib.import_module("onnxruntime")
+        session_options = onnxruntime_module.SessionOptions()
 
         model_filename = self.settings.model_filename or "model.onnx"
         path = os.path.join(self.settings.model_dir, model_filename)
@@ -42,8 +45,6 @@ class OnnxAdapter(BaseAdapter):
         providers = [
             p.strip() for p in self.settings.onnx_providers.split(",") if p.strip()
         ]
-        session_options = ort.SessionOptions()
-
         if self.settings.onnx_intra_op_threads > 0:
             session_options.intra_op_num_threads = self.settings.onnx_intra_op_threads
         if self.settings.onnx_inter_op_threads > 0:
@@ -52,29 +53,36 @@ class OnnxAdapter(BaseAdapter):
         optimization_level = self.settings.onnx_graph_opt_level
         if optimization_level == "disable":
             session_options.graph_optimization_level = (
-                ort.GraphOptimizationLevel.ORT_DISABLE_ALL
+                onnxruntime_module.GraphOptimizationLevel.ORT_DISABLE_ALL
             )
         elif optimization_level == "basic":
             session_options.graph_optimization_level = (
-                ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+                onnxruntime_module.GraphOptimizationLevel.ORT_ENABLE_BASIC
             )
         elif optimization_level == "extended":
             session_options.graph_optimization_level = (
-                ort.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
+                onnxruntime_module.GraphOptimizationLevel.ORT_ENABLE_EXTENDED
             )
         else:
             session_options.graph_optimization_level = (
-                ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+                onnxruntime_module.GraphOptimizationLevel.ORT_ENABLE_ALL
             )
 
-        self.session = ort.InferenceSession(
+        self.session = onnxruntime_module.InferenceSession(
             path, sess_options=session_options, providers=providers
         )
-        self.input_names = [i.name for i in self.session.get_inputs()]
-        self.output_names = [o.name for o in self.session.get_outputs()]
+        session = self.session
+        self.input_names = [item.name for item in session.get_inputs()]
+        self.output_names = [item.name for item in session.get_outputs()]
 
         if self.settings.onnx_output_map_json:
-            self._output_map = json.loads(self.settings.onnx_output_map_json)
+            raw_output_map = json.loads(self.settings.onnx_output_map_json)
+            if not isinstance(raw_output_map, dict):
+                raise ValueError("ONNX_OUTPUT_MAP_JSON must be a JSON object")
+            self._output_map = {
+                str(response_key): str(onnx_name)
+                for response_key, onnx_name in raw_output_map.items()
+            }
 
     def is_ready(self: OnnxAdapter) -> bool:
         """Return whether the runtime session and metadata are available."""
@@ -103,12 +111,12 @@ class OnnxAdapter(BaseAdapter):
             return arr.astype(np.int64, copy=False)
         return arr
 
-    def predict(self: OnnxAdapter, parsed_input: ParsedInput) -> object:
+    def predict(self: OnnxAdapter, parsed_input: object) -> object:
         """Run inference for tabular or tensor input payloads.
 
         Parameters
         ----------
-        parsed_input : ParsedInput
+        parsed_input : object
             Parsed input containing either ``X`` features or named tensors.
 
         Returns
@@ -116,6 +124,9 @@ class OnnxAdapter(BaseAdapter):
         object
             Prediction output represented as JSON-serializable structures.
         """
+        if not isinstance(parsed_input, ParsedInput):
+            raise TypeError("ONNX adapter expects ParsedInput")
+
         feed = self._build_feed(parsed_input)
         if self._output_map:
             return self._predict_with_output_map(feed)
@@ -136,17 +147,24 @@ class OnnxAdapter(BaseAdapter):
                 "ONNX adapter requires ParsedInput.X or ParsedInput.tensors"
             )
         features = self._coerce(np.asarray(parsed_input.X))
-        return {self.settings.onnx_input_name or self.input_names[0]: features}
+        input_names = self.input_names
+        if not input_names:
+            raise RuntimeError("ONNX adapter input metadata is unavailable")
+        return {self.settings.onnx_input_name or input_names[0]: features}
 
     def _predict_with_output_map(
         self: OnnxAdapter, feed: dict[str, np.ndarray]
     ) -> dict[str, object]:
         """Run inference and map outputs according to configured aliases."""
-        requested_outputs = list(self._output_map.values())
-        outputs = self.session.run(requested_outputs, feed)
+        output_map = self._output_map
+        session = self.session
+        if output_map is None or session is None:
+            raise RuntimeError("ONNX output map or session not initialized")
+        requested_outputs = list(output_map.values())
+        outputs = session.run(requested_outputs, feed)
         mapped_outputs = {}
         for (response_key, _onnx_name), value in zip(
-            self._output_map.items(), outputs, strict=False
+            output_map.items(), outputs, strict=False
         ):
             mapped_outputs[response_key] = (
                 value.tolist() if hasattr(value, "tolist") else value
@@ -157,10 +175,37 @@ class OnnxAdapter(BaseAdapter):
         self: OnnxAdapter, feed: dict[str, np.ndarray]
     ) -> object:
         """Run inference and return a single configured output tensor."""
+        session = self.session
+        output_names = self.output_names
+        if session is None or output_names is None:
+            raise RuntimeError("ONNX session not initialized")
         if self.settings.onnx_output_name:
-            return self.session.run([self.settings.onnx_output_name], feed)[0]
+            return session.run([self.settings.onnx_output_name], feed)[0]
         output_index = max(
             0,
-            min(self.settings.onnx_output_index, len(self.output_names) - 1),
+            min(self.settings.onnx_output_index, len(output_names) - 1),
         )
-        return self.session.run([self.output_names[output_index]], feed)[0]
+        return session.run([output_names[output_index]], feed)[0]
+
+
+class _OnnxInputOutputInfoProtocol(Protocol):
+    """Protocol for ONNX input and output metadata."""
+
+    name: str
+
+
+class _OnnxSessionProtocol(Protocol):
+    """Protocol for ONNX inference session."""
+
+    def get_inputs(self: _OnnxSessionProtocol) -> list[_OnnxInputOutputInfoProtocol]:
+        """Return model input metadata."""
+
+    def get_outputs(self: _OnnxSessionProtocol) -> list[_OnnxInputOutputInfoProtocol]:
+        """Return model output metadata."""
+
+    def run(
+        self: _OnnxSessionProtocol,
+        output_names: list[str],
+        feed: dict[str, np.ndarray],
+    ) -> list[object]:
+        """Run inference for output names and input feed."""

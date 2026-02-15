@@ -3,24 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import os
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Protocol, cast
 
 import httpx
 import numpy as np
-from skl2onnx import convert_sklearn
-from skl2onnx.common.data_types import FloatTensorType
-from sklearn.datasets import load_iris
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.neural_network import MLPClassifier
-
-if TYPE_CHECKING:
-    from sklearn.base import BaseEstimator
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPOSITORY_ROOT / "src"
@@ -31,7 +23,14 @@ from application import create_application  # noqa: E402
 from config import Settings  # noqa: E402
 
 
-def train_model(algorithm_name: str) -> tuple[BaseEstimator, np.ndarray]:
+class ModelProtocol(Protocol):
+    """Protocol for trainable sklearn-like models."""
+
+    def fit(self: ModelProtocol, features: np.ndarray, labels: object) -> object:
+        """Fit model."""
+
+
+def train_model(algorithm_name: str) -> tuple[ModelProtocol, np.ndarray]:
     """Train a sklearn model on Iris and return model plus features.
 
     Parameters
@@ -42,19 +41,26 @@ def train_model(algorithm_name: str) -> tuple[BaseEstimator, np.ndarray]:
 
     Returns
     -------
-    tuple[BaseEstimator, numpy.ndarray]
+    tuple[ModelProtocol, numpy.ndarray]
         Trained model and full training feature matrix.
     """
-    iris = load_iris()
+    datasets_module = importlib.import_module("sklearn.datasets")
+    linear_model_module = importlib.import_module("sklearn.linear_model")
+    ensemble_module = importlib.import_module("sklearn.ensemble")
+    neural_network_module = importlib.import_module("sklearn.neural_network")
+
+    iris = datasets_module.load_iris()
     features = iris.data.astype(np.float32)
     labels = iris.target
 
     if algorithm_name == "logistic_regression":
-        model = LogisticRegression(max_iter=300)
+        model = linear_model_module.LogisticRegression(max_iter=300)
     elif algorithm_name == "random_forest":
-        model = RandomForestClassifier(n_estimators=200, random_state=42)
+        model = ensemble_module.RandomForestClassifier(
+            n_estimators=200, random_state=42
+        )
     elif algorithm_name == "neural_network":
-        model = MLPClassifier(
+        model = neural_network_module.MLPClassifier(
             hidden_layer_sizes=(32, 16),
             max_iter=600,
             random_state=42,
@@ -67,13 +73,13 @@ def train_model(algorithm_name: str) -> tuple[BaseEstimator, np.ndarray]:
 
 
 def export_model_to_onnx(
-    model: BaseEstimator, feature_count: int, output_path: Path
+    model: ModelProtocol, feature_count: int, output_path: Path
 ) -> Path:
     """Export a sklearn model to ONNX.
 
     Parameters
     ----------
-    model : BaseEstimator
+    model : ModelProtocol
         Trained sklearn model.
     feature_count : int
         Number of input features.
@@ -85,8 +91,13 @@ def export_model_to_onnx(
     pathlib.Path
         Written ONNX model path.
     """
+    skl2onnx_module = importlib.import_module("skl2onnx")
+    data_types_module = importlib.import_module("skl2onnx.common.data_types")
+    convert_sklearn = skl2onnx_module.convert_sklearn
+    float_tensor_type = data_types_module.FloatTensorType
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    initial_type = [("x", FloatTensorType([None, feature_count]))]
+    initial_type = [("x", float_tensor_type([None, feature_count]))]
     onnx_model = convert_sklearn(model, initial_types=initial_type)
     output_path.write_bytes(onnx_model.SerializeToString())
     return output_path
@@ -167,7 +178,7 @@ async def run_inference_request(
                     f"status={invocation_response.status_code}, "
                     f"body={invocation_response.text}"
                 )
-            return invocation_response.json()
+            return cast(list[object], invocation_response.json())
 
 
 def run_train_and_serve_demo(algorithm_name: str) -> None:

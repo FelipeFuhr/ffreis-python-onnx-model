@@ -3,17 +3,38 @@
 from __future__ import annotations
 
 import glob
+import importlib
 import logging
 import os
-from typing import TYPE_CHECKING
+from collections.abc import Collection
+from typing import Protocol, cast
 
 from config import Settings
 
-if TYPE_CHECKING:
-    from pandas import DataFrame, Series
-    from sklearn.base import BaseEstimator
-
 log = logging.getLogger("train")
+
+
+class SeriesLike(Protocol):
+    """Protocol for vector-like target series."""
+
+
+class DataFrameLike(Protocol):
+    """Protocol for pandas-like dataframes used in training."""
+
+    columns: Collection[object]
+    shape: tuple[int, int]
+
+    def __getitem__(self: DataFrameLike, item: str) -> SeriesLike:
+        """Return one column."""
+
+    def drop(self: DataFrameLike, *, columns: list[str]) -> DataFrameLike:
+        """Drop columns."""
+
+    def select_dtypes(self: DataFrameLike, *, include: list[str]) -> DataFrameLike:
+        """Select columns by dtype."""
+
+    def fillna(self: DataFrameLike, value: float) -> DataFrameLike:
+        """Fill missing values."""
 
 
 class TrainingDataRepository:
@@ -47,13 +68,13 @@ class TrainingDataRepository:
         )
 
     @staticmethod
-    def load_training_table(path: str) -> DataFrame:
+    def load_training_table(path: str) -> DataFrameLike:
         """Load a training table from CSV or Parquet path."""
-        import pandas as pd
+        pandas_module = importlib.import_module("pandas")
 
         if path.endswith(".parquet"):
-            return pd.read_parquet(path)
-        return pd.read_csv(path)
+            return cast(DataFrameLike, pandas_module.read_parquet(path))
+        return cast(DataFrameLike, pandas_module.read_csv(path))
 
 
 class SklearnTrainingService:
@@ -64,18 +85,22 @@ class SklearnTrainingService:
         self.settings = settings
 
     def fit_model(
-        self: SklearnTrainingService, dataframe: DataFrame
-    ) -> tuple[BaseEstimator, int]:
+        self: SklearnTrainingService, dataframe: DataFrameLike
+    ) -> tuple[object, int]:
         """Fit a scikit-learn model and return model with feature count."""
-        from sklearn.ensemble import RandomForestClassifier
-        from sklearn.linear_model import LogisticRegression
-        from sklearn.pipeline import Pipeline
-        from sklearn.preprocessing import StandardScaler
+        ensemble_module = importlib.import_module("sklearn.ensemble")
+        linear_model_module = importlib.import_module("sklearn.linear_model")
+        pipeline_module = importlib.import_module("sklearn.pipeline")
+        preprocessing_module = importlib.import_module("sklearn.preprocessing")
+        random_forest_classifier = ensemble_module.RandomForestClassifier
+        logistic_regression = linear_model_module.LogisticRegression
+        pipeline_class = pipeline_module.Pipeline
+        standard_scaler = preprocessing_module.StandardScaler
 
         target, features = self._extract_target_and_features(dataframe)
 
         if self.settings.train_algorithm == "rf":
-            model = RandomForestClassifier(
+            model = random_forest_classifier(
                 n_estimators=int(os.getenv("RF_N_ESTIMATORS", "300")),
                 max_depth=int(os.getenv("RF_MAX_DEPTH", "0")) or None,
                 n_jobs=-1,
@@ -84,12 +109,12 @@ class SklearnTrainingService:
             model.fit(features, target)
             return model, features.shape[1]
 
-        pipeline = Pipeline(
+        pipeline = pipeline_class(
             [
-                ("scaler", StandardScaler(with_mean=True, with_std=True)),
+                ("scaler", standard_scaler(with_mean=True, with_std=True)),
                 (
                     "clf",
-                    LogisticRegression(
+                    logistic_regression(
                         max_iter=int(os.getenv("LOGREG_MAX_ITER", "200"))
                     ),
                 ),
@@ -98,23 +123,25 @@ class SklearnTrainingService:
         pipeline.fit(features, target)
         return pipeline, features.shape[1]
 
-    def save_model(self: SklearnTrainingService, model: BaseEstimator) -> None:
+    def save_model(self: SklearnTrainingService, model: object) -> None:
         """Persist fitted scikit-learn model to model directory."""
-        import joblib
+        joblib_module = importlib.import_module("joblib")
 
         os.makedirs(self.settings.model_dir, exist_ok=True)
         model_path = os.path.join(self.settings.model_dir, "model.joblib")
-        joblib.dump(model, model_path)
+        joblib_module.dump(model, model_path)
         log.info("Saved sklearn model: %s", model_path)
 
     def export_model_to_onnx(
-        self: SklearnTrainingService, model: BaseEstimator, n_features: int
+        self: SklearnTrainingService, model: object, n_features: int
     ) -> None:
         """Export fitted model to ONNX format."""
-        from skl2onnx import convert_sklearn
-        from skl2onnx.common.data_types import FloatTensorType
+        skl2onnx_module = importlib.import_module("skl2onnx")
+        data_types_module = importlib.import_module("skl2onnx.common.data_types")
+        convert_sklearn = skl2onnx_module.convert_sklearn
+        float_tensor_type = data_types_module.FloatTensorType
 
-        initial_type = [("input", FloatTensorType([None, n_features]))]
+        initial_type = [("input", float_tensor_type([None, n_features]))]
         onx = convert_sklearn(model, initial_types=initial_type)
 
         model_path = os.path.join(self.settings.model_dir, "model.onnx")
@@ -123,8 +150,8 @@ class SklearnTrainingService:
         log.info("Exported ONNX model: %s", model_path)
 
     def _extract_target_and_features(
-        self: SklearnTrainingService, dataframe: DataFrame
-    ) -> tuple[Series, DataFrame]:
+        self: SklearnTrainingService, dataframe: DataFrameLike
+    ) -> tuple[SeriesLike, DataFrameLike]:
         """Extract target vector and numeric feature matrix from dataframe."""
         if self.settings.train_target not in dataframe.columns:
             raise ValueError(
@@ -186,26 +213,24 @@ def find_training_data_file(settings: Settings) -> str:
     return TrainingDataRepository(settings).find_training_data_file()
 
 
-def load_training_table(path: str) -> DataFrame:
+def load_training_table(path: str) -> DataFrameLike:
     """Load training table from file path."""
     return TrainingDataRepository.load_training_table(path)
 
 
 def fit_sklearn_model(
-    settings: Settings, dataframe: DataFrame
-) -> tuple[BaseEstimator, int]:
+    settings: Settings, dataframe: DataFrameLike
+) -> tuple[object, int]:
     """Fit a scikit-learn model and return model with feature count."""
     return SklearnTrainingService(settings).fit_model(dataframe)
 
 
-def save_sklearn_model(settings: Settings, model: BaseEstimator) -> None:
+def save_sklearn_model(settings: Settings, model: object) -> None:
     """Save scikit-learn model artifact."""
     SklearnTrainingService(settings).save_model(model)
 
 
-def export_model_to_onnx(
-    settings: Settings, model: BaseEstimator, n_features: int
-) -> None:
+def export_model_to_onnx(settings: Settings, model: object, n_features: int) -> None:
     """Export model artifact to ONNX."""
     SklearnTrainingService(settings).export_model_to_onnx(model, n_features)
 
