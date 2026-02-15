@@ -1,0 +1,3 @@
+FROM example-base
+
+ENTRYPOINT ["python", "examples/train_and_serve_random_forest.py"]

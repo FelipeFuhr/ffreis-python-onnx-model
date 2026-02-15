@@ -1,0 +1,76 @@
+name: examples
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  run-example-scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Run logistic regression example
+        run: |
+          uv run \
+            --with httpx \
+            --with onnx \
+            --with onnxruntime \
+            --with pydantic \
+            --with scikit-learn \
+            --with skl2onnx \
+            python examples/train_and_serve_logistic_regression.py
+
+      - name: Run random forest example
+        run: |
+          uv run \
+            --with httpx \
+            --with onnx \
+            --with onnxruntime \
+            --with pydantic \
+            --with scikit-learn \
+            --with skl2onnx \
+            python examples/train_and_serve_random_forest.py
+
+      - name: Run neural network example
+        run: |
+          uv run \
+            --with httpx \
+            --with onnx \
+            --with onnxruntime \
+            --with pydantic \
+            --with scikit-learn \
+            --with skl2onnx \
+            python examples/train_and_serve_neural_network.py
+
+  build-example-containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build base example image
+        run: docker build -f container/Dockerfile.example-base -t example-base .
+
+      - name: Build and run logistic regression container
+        run: |
+          docker build -f container/Dockerfile.example-logistic-regression -t example-logistic .
+          docker run --rm example-logistic
+
+      - name: Build and run random forest container
+        run: |
+          docker build -f container/Dockerfile.example-random-forest -t example-random-forest .
+          docker run --rm example-random-forest
+
+      - name: Build and run neural network container
+        run: |
+          docker build -f container/Dockerfile.example-neural-network -t example-neural-network .
+          docker run --rm example-neural-network
