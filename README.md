@@ -163,3 +163,52 @@ make test
 
 # Tests also run during: make build-builder
 ```
+
+## Model Examples
+
+The repository now includes train-and-serve examples for multiple model families:
+
+- `examples/train_and_serve_logistic_regression.py`
+- `examples/train_and_serve_random_forest.py`
+- `examples/train_and_serve_neural_network.py`
+
+Each script performs the complete flow:
+
+1. Train the model on Iris data.
+2. Export the trained model to ONNX.
+3. Start the real HTTP application in-process.
+4. Call `/ready` and `/invocations`.
+
+Run them locally with `uv`:
+
+```bash
+uv run --with httpx --with onnx --with onnxruntime --with pydantic --with scikit-learn --with skl2onnx \
+  python examples/train_and_serve_logistic_regression.py
+
+uv run --with httpx --with onnx --with onnxruntime --with pydantic --with scikit-learn --with skl2onnx \
+  python examples/train_and_serve_random_forest.py
+
+uv run --with httpx --with onnx --with onnxruntime --with pydantic --with scikit-learn --with skl2onnx \
+  python examples/train_and_serve_neural_network.py
+```
+
+### Example Containers
+
+Dedicated example Dockerfiles are available in `container/`:
+
+- `Dockerfile.example-base`
+- `Dockerfile.example-logistic-regression`
+- `Dockerfile.example-random-forest`
+- `Dockerfile.example-neural-network`
+
+Build and run:
+
+```bash
+docker build -f container/Dockerfile.example-base -t example-base .
+docker build -f container/Dockerfile.example-neural-network -t example-neural-network .
+docker run --rm example-neural-network
+```
+
+### CI Validation
+
+Workflow `.github/workflows/examples.yml` validates example scripts and containers on push and pull request.
