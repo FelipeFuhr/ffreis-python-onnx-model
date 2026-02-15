@@ -1,0 +1,161 @@
+name: Container Vulnerability Scan (Trivy)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "container/**"
+      - "scripts/**"
+      - "Makefile"
+      - ".trivyignore.yaml"
+      - ".github/workflows/trivy.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "container/**"
+      - "scripts/**"
+      - "Makefile"
+      - ".trivyignore.yaml"
+      - ".github/workflows/trivy.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  image-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Podman
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y podman
+
+      - name: Build images
+        run: |
+          set -euo pipefail
+          CONTAINER_COMMAND=podman make build
+
+      - name: Install Trivy
+        run: |
+          set -euo pipefail
+          TRIVY_INSTALL_REF="v0.67.2"
+          curl -sfL \
+            --proto '=https' \
+            --proto-redir '=https' \
+            "https://raw.githubusercontent.com/aquasecurity/trivy/${TRIVY_INSTALL_REF}/contrib/install.sh" \
+            | sudo sh -s -- -b /usr/local/bin
+          trivy --version
+
+      - name: Save images and scan (sequential, Podman)
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts trivy-results
+          images=(ffreis/base ffreis/base-builder ffreis/builder ffreis/base-runner ffreis/runner)
+
+          # Warm DB once.
+          trivy image --download-db-only --no-progress
+
+          for image in "${images[@]}"; do
+            name="${image##*/}"
+            tar="artifacts/${name}.tar"
+
+            podman save -o "$tar" "$image"
+            test -s "$tar"
+
+            trivy image \
+              --input "$tar" \
+              --skip-db-update \
+              --no-progress \
+              --ignorefile .trivyignore.yaml \
+              --scanners vuln \
+              --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 0 \
+              --format sarif \
+              --output "trivy-results/${name}.sarif"
+            test -s "trivy-results/${name}.sarif"
+
+            trivy image \
+              --input "$tar" \
+              --skip-db-update \
+              --no-progress \
+              --ignorefile .trivyignore.yaml \
+              --scanners vuln \
+              --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 0 \
+              --format json \
+              --output "trivy-results/${name}.json"
+            test -s "trivy-results/${name}.json"
+
+            echo "Full vulnerability report for ${image} (all severities):"
+            trivy image \
+              --input "$tar" \
+              --skip-db-update \
+              --no-progress \
+              --ignorefile .trivyignore.yaml \
+              --scanners vuln \
+              --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 0 \
+              --format table
+
+            echo "Gating ${image} on HIGH/CRITICAL vulnerabilities..."
+            trivy image \
+              --input "$tar" \
+              --skip-db-update \
+              --no-progress \
+              --ignorefile .trivyignore.yaml \
+              --scanners vuln \
+              --severity HIGH,CRITICAL \
+              --ignore-unfixed \
+              --exit-code 1 \
+              --format table
+
+            rm -f "$tar"
+          done
+
+      - name: Upload Trivy JSON reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-json-reports
+          path: trivy-results/*.json
+          if-no-files-found: error
+
+      - name: Upload Trivy SARIF (per image)
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in trivy-results/*.sarif; do
+            name="$(basename "$f" .sarif)"
+            echo "Uploading $f with category trivy-$name"
+            sarif_payload="$(gzip -c "$f" | base64 | tr -d '\n')"
+            gh api \
+              -X POST \
+              /repos/${{ github.repository }}/code-scanning/sarifs \
+              -f sarif="${sarif_payload}" \
+              -f commit_sha="${{ github.sha }}" \
+              -f ref="${{ github.ref }}"
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}

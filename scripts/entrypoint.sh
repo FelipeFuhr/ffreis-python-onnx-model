@@ -7,4 +7,4 @@ if [ ! -f "${APP}" ]; then
     exit 1
 fi
 
-exec python3 "${APP}"
+exec /opt/venv/bin/python "${APP}"

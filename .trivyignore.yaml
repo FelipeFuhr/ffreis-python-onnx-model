@@ -1,0 +1,10 @@
+# Trivy ignore policy (template).
+#
+# Keep this file small and time-bound:
+# - Prefer fixing vulnerabilities over ignoring them.
+# - Always include `statement` and `expired_at`.
+# - Scope ignores to specific `paths` whenever possible.
+#
+# Reference:
+# https://trivy.dev/latest/docs/configuration/filtering/#by-finding-ids
+vulnerabilities: []

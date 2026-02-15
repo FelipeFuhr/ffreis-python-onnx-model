@@ -1,0 +1,55 @@
+name: Code Coverage (Codecov)
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "Makefile"
+      - ".github/workflows/coverage.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "Makefile"
+      - ".github/workflows/coverage.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Generate coverage
+        run: |
+          set -euo pipefail
+          make env
+          make build-local
+          make coverage
+          test -s coverage.xml
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+          verbose: true

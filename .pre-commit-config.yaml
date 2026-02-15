@@ -1,0 +1,70 @@
+minimum_pre_commit_version: "3.6.0"
+
+default_stages: [pre-commit]
+fail_fast: false
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ["--maxkb=2048"]
+      - id: check-symlinks
+      - id: destroyed-symlinks
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+      - id: fix-byte-order-marker
+      - id: check-ast
+      - id: check-docstring-first
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: ruff-lint
+        name: ruff (lint)
+        entry: python -m ruff check --fix
+        language: system
+        types: [python]
+        pass_filenames: true
+
+      - id: ruff-format
+        name: ruff (format)
+        entry: python -m ruff format
+        language: system
+        types: [python]
+        pass_filenames: true
+
+      - id: black
+        name: black
+        entry: python -m black
+        language: system
+        types: [python]
+        pass_filenames: true
+
+      - id: mypy
+        name: mypy
+        entry: python -m mypy src
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: pytest-unit
+        name: pytest (unit)
+        entry: python -m pytest -q -m unit tests
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

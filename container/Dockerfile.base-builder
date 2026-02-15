@@ -4,10 +4,11 @@ USER root
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    python3-venv \
-    ca-certificates && \
+      python3 \
+      python3-pip \
+      python3-venv \
+      ca-certificates && \
+    install -d -m 0750 -o appuser -g appgroup /opt/venv && \
     rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONUNBUFFERED=1

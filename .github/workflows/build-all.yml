@@ -1,0 +1,52 @@
+name: Build All (Python)
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "Makefile"
+      - ".github/workflows/build-all.yml"
+  push:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "main.py"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "Makefile"
+      - ".github/workflows/build-all.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  matrix-build:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.13", "3.12"]
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Build + test
+        run: |
+          set -euo pipefail
+          make env
+          make build-local
+          make lint
+          make test
