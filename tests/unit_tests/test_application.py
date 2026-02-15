@@ -1,14 +1,116 @@
 """Tests for application."""
 
+import types
 from typing import Self
 
 import httpx
+import numpy as np
 import pytest
 
-from application import create_application
+from application import _batch_size, _NoopSpan, create_application
 from config import Settings
+from parsed_types import ParsedInput
 
 pytestmark = pytest.mark.unit
+
+
+def test_noop_span_context_manager_contract() -> None:
+    """Verify no-op span enter/exit behavior."""
+    span = _NoopSpan()
+    assert span.__enter__() is span
+    assert span.__exit__(None, None, None) is False
+    assert span.set_attribute("k", "v") is None
+
+
+def test_batch_size_uses_tensors_and_raises_for_empty_payload() -> None:
+    """Verify batch-size extraction from tensors and empty payload errors."""
+    parsed_tensors = ParsedInput(tensors={"x": np.zeros((2, 3), dtype=np.float32)})
+    assert _batch_size(parsed_tensors) == 2
+
+    parsed_scalar_tensor = ParsedInput(tensors={"x": np.array(1.0, dtype=np.float32)})
+    assert _batch_size(parsed_scalar_tensor) == 1
+
+    with pytest.raises(ValueError, match="no features/tensors"):
+        _batch_size(ParsedInput())
+
+
+def test_builder_configures_telemetry_when_setup_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify telemetry instrumentation is wired when setup reports enabled."""
+    import application as application_module
+
+    instrument_calls: list[object] = []
+    monkeypatch.setattr(application_module, "setup_telemetry", lambda settings: True)
+    monkeypatch.setattr(
+        application_module,
+        "instrument_fastapi_application",
+        lambda settings, application: instrument_calls.append(application),
+    )
+
+    monkeypatch.setenv("OTEL_ENABLED", "true")
+    monkeypatch.setenv("PROMETHEUS_ENABLED", "false")
+    create_application(Settings())
+    assert instrument_calls
+
+
+@pytest.mark.asyncio
+async def test_builder_run_inference_raises_when_adapter_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Raise runtime error when adapter loading leaves adapter unset."""
+    import application as application_module
+
+    monkeypatch.setenv("OTEL_ENABLED", "false")
+    monkeypatch.setenv("PROMETHEUS_ENABLED", "false")
+    builder = application_module.InferenceApplicationBuilder(Settings())
+    builder._ensure_adapter_loaded = types.MethodType(
+        lambda self: None,
+        builder,
+    )
+    with pytest.raises(RuntimeError, match="Adapter failed to load"):
+        await builder._run_inference(  # noqa: SLF001
+            request=object(),  # type: ignore[arg-type]
+            start_time=0.0,
+        )
+
+
+def test_readiness_returns_500_when_adapter_stays_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Return 500 readiness when loader runs but adapter remains unavailable."""
+    import application as application_module
+
+    monkeypatch.setenv("OTEL_ENABLED", "false")
+    monkeypatch.setenv("PROMETHEUS_ENABLED", "false")
+    builder = application_module.InferenceApplicationBuilder(Settings())
+    builder._ensure_adapter_loaded = types.MethodType(
+        lambda self: None,
+        builder,
+    )
+    response = builder._build_readiness_response()  # noqa: SLF001
+    assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_metrics_fallback_route_when_instrumentator_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Expose fallback metrics route when instrumentator dependency is missing."""
+    import application as application_module
+
+    monkeypatch.setenv("OTEL_ENABLED", "false")
+    monkeypatch.setenv("PROMETHEUS_ENABLED", "true")
+    monkeypatch.setattr(application_module, "Instrumentator", None)
+    application = create_application(Settings())
+    transport = httpx.ASGITransport(app=application)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as client:
+        response = await client.get("/metrics")
+        assert response.status_code == 200
+        assert "byoc_up 1" in response.text
 
 
 class TestAppEndpoints:

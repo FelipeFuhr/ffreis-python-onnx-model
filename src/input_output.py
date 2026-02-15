@@ -10,6 +10,16 @@ import numpy.typing as npt
 from config import Settings
 from parsed_types import ParsedInput
 
+APPLICATION_JSON_CONTENT_TYPE = "application/json"
+JSON_CONTENT_TYPES: tuple[str, ...] = ("application/json", "application/*+json")
+JSON_LINES_CONTENT_TYPES: tuple[str, ...] = (
+    "application/jsonlines",
+    "application/x-jsonlines",
+    "application/jsonl",
+    "application/x-ndjson",
+)
+CSV_CONTENT_TYPES: tuple[str, ...] = ("text/csv", "application/csv")
+
 
 def _strip_params(content_type: str) -> str:
     """Normalize content type by removing MIME parameters."""
@@ -249,7 +259,7 @@ class PayloadParser:
         self: PayloadParser, payload: bytes, content_type: str
     ) -> object:
         """Extract records for JSON and JSON Lines content types."""
-        if content_type in ("application/json", "application/*+json"):
+        if content_type in JSON_CONTENT_TYPES:
             return _parse_json(payload, self.settings)
         return _parse_jsonl(payload)
 
@@ -313,21 +323,16 @@ class PayloadParser:
         raw_content_type: str,
     ) -> np.ndarray:
         """Load raw tabular payload as NumPy array."""
-        if normalized_content_type in ("text/csv", "application/csv"):
+        if normalized_content_type in CSV_CONTENT_TYPES:
             return _parse_csv(payload, self.settings)
 
-        if normalized_content_type in ("application/json", "application/*+json"):
+        if normalized_content_type in JSON_CONTENT_TYPES:
             obj = _parse_json(payload, self.settings)
             if isinstance(obj, dict) and self.settings.jsonl_features_key in obj:
                 obj = [obj[self.settings.jsonl_features_key]]
             return np.asarray(obj)
 
-        if normalized_content_type in (
-            "application/jsonlines",
-            "application/x-jsonlines",
-            "application/jsonl",
-            "application/x-ndjson",
-        ):
+        if normalized_content_type in JSON_LINES_CONTENT_TYPES:
             records = _parse_jsonl(payload)
             rows = []
             for record in records:
@@ -365,14 +370,7 @@ class PayloadParser:
 
     @staticmethod
     def _is_json_content_type(content_type: str) -> bool:
-        return content_type in (
-            "application/json",
-            "application/*+json",
-            "application/jsonlines",
-            "application/x-jsonlines",
-            "application/jsonl",
-            "application/x-ndjson",
-        )
+        return content_type in JSON_CONTENT_TYPES + JSON_LINES_CONTENT_TYPES
 
 
 class OutputFormatter:
@@ -387,7 +385,7 @@ class OutputFormatter:
     ) -> tuple[str, str]:
         """Format predictions as JSON or CSV."""
         if isinstance(predictions, dict):
-            return json.dumps(predictions), "application/json"
+            return json.dumps(predictions), APPLICATION_JSON_CONTENT_TYPE
 
         normalized_accept = (
             (accept or self.settings.default_accept).split(",")[0].strip().lower()
@@ -395,9 +393,9 @@ class OutputFormatter:
         if hasattr(predictions, "tolist"):
             predictions = predictions.tolist()
 
-        if normalized_accept in ("text/csv", "application/csv"):
+        if normalized_accept in CSV_CONTENT_TYPES:
             return self._format_csv(predictions), "text/csv"
-        return self._format_json(predictions), "application/json"
+        return self._format_json(predictions), APPLICATION_JSON_CONTENT_TYPE
 
     def _format_csv(self: OutputFormatter, predictions: object) -> str:
         """Format scalar/vector/matrix predictions as CSV text."""

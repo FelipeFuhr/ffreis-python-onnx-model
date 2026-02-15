@@ -353,3 +353,115 @@ def test_inject_current_trace_context_uses_propagator(
 
     carrier: dict[str, str] = {}
     assert inject_current_trace_context(carrier) == {"traceparent": "00-abc-def-01"}
+
+
+def test_setup_telemetry_happy_path_without_httpx_instrumentor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validate setup succeeds when HTTPX instrumentation is unavailable."""
+    monkeypatch.setenv("OTEL_ENABLED", "true")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector")
+    import telemetry as telemetry_module
+
+    monkeypatch.setattr(
+        telemetry_module,
+        "trace",
+        types.SimpleNamespace(set_tracer_provider=lambda provider: None),
+    )
+    monkeypatch.setattr(
+        telemetry_module,
+        "Resource",
+        types.SimpleNamespace(create=lambda payload: {"resource": payload}),
+    )
+    monkeypatch.setattr(
+        telemetry_module,
+        "TracerProvider",
+        lambda *, resource: types.SimpleNamespace(add_span_processor=lambda p: None),
+    )
+    monkeypatch.setattr(
+        telemetry_module,
+        "OTLPSpanExporter",
+        lambda **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        telemetry_module,
+        "BatchSpanProcessor",
+        lambda exporter: object(),
+    )
+    monkeypatch.setattr(
+        telemetry_module,
+        "RequestsInstrumentor",
+        lambda: types.SimpleNamespace(instrument=lambda: None),
+    )
+    monkeypatch.setattr(telemetry_module, "HTTPXClientInstrumentor", None)
+    monkeypatch.setattr(
+        telemetry_module,
+        "LoggingInstrumentor",
+        lambda: types.SimpleNamespace(instrument=lambda set_logging_format: None),
+    )
+
+    assert setup_telemetry(Settings()) is True
+
+
+def test_get_current_trace_identifiers_returns_empty_for_invalid_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validate invalid span contexts produce empty identifier mapping."""
+    import telemetry as telemetry_module
+
+    span_context = types.SimpleNamespace(trace_id=1, span_id=2, is_valid=False)
+    fake_span = types.SimpleNamespace(get_span_context=lambda: span_context)
+    monkeypatch.setattr(
+        telemetry_module,
+        "trace",
+        types.SimpleNamespace(get_current_span=lambda: fake_span),
+    )
+    assert get_current_trace_identifiers() == {}
+
+
+def test_inject_current_trace_context_returns_input_when_propagator_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validate context injection is a no-op when propagate is unavailable."""
+    import telemetry as telemetry_module
+
+    monkeypatch.setattr(telemetry_module, "propagate", None)
+    carrier: dict[str, str] = {"x-existing": "1"}
+    assert inject_current_trace_context(carrier) == {"x-existing": "1"}
+
+
+def test_get_tracer_returns_value_when_trace_module_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validate get_tracer delegates to trace.get_tracer when available."""
+    import telemetry as telemetry_module
+
+    sentinel = object()
+    monkeypatch.setattr(
+        telemetry_module,
+        "trace",
+        types.SimpleNamespace(get_tracer=lambda name: sentinel),
+    )
+    assert telemetry_module.get_tracer("any") is sentinel
+
+
+def test_setup_telemetry_returns_false_without_endpoint_when_deps_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validate explicit no-endpoint branch when dependencies are present."""
+    monkeypatch.setenv("OTEL_ENABLED", "true")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+    import telemetry as telemetry_module
+
+    monkeypatch.setattr(
+        telemetry_module,
+        "trace",
+        types.SimpleNamespace(set_tracer_provider=lambda provider: None),
+    )
+    monkeypatch.setattr(telemetry_module, "Resource", object())
+    monkeypatch.setattr(telemetry_module, "TracerProvider", object())
+    monkeypatch.setattr(telemetry_module, "OTLPSpanExporter", object())
+    monkeypatch.setattr(telemetry_module, "BatchSpanProcessor", object())
+    monkeypatch.setattr(telemetry_module, "RequestsInstrumentor", object())
+    monkeypatch.setattr(telemetry_module, "LoggingInstrumentor", object())
+    assert setup_telemetry(Settings()) is False
