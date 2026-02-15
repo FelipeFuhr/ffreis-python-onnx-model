@@ -67,9 +67,6 @@ select = ["E", "F", "I", "UP", "B", "D", "ANN"]
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
-[tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["D", "ANN"]
-
 [tool.mypy]
 python_version = "3.13"
 strict = true

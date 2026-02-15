@@ -17,41 +17,99 @@ pytestmark = pytest.mark.unit
 
 
 class TestLib:
-    def test_add(self) -> None:
+    """Test suite for TestLib."""
+
+    def test_add(self: object) -> None:
+        """Verify add.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         assert add(2, 3) == 5
         assert add(-1, 1) == 0
         assert add(0, 0) == 0
 
-    def test_greet(self) -> None:
+    def test_greet(self: object) -> None:
+        """Verify greet.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         assert greet() == "Hello, world!"
 
-    def test_is_even(self) -> None:
+    def test_is_even(self: object) -> None:
+        """Verify is even.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         assert is_even(2) is True
         assert is_even(3) is False
         assert is_even(0) is True
         assert is_even(-2) is True
 
-    def test_clamp(self) -> None:
+    def test_clamp(self: object) -> None:
+        """Verify clamp.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         assert clamp(5, 0, 10) == 5
         assert clamp(-5, 0, 10) == 0
         assert clamp(15, 0, 10) == 10
 
-    def test_repeat_word(self) -> None:
+    def test_repeat_word(self: object) -> None:
+        """Verify repeat word.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         assert repeat_word("hello", 3) == "hello hello hello"
         assert repeat_word("test", 1) == "test"
         assert repeat_word("x", 0) == ""
 
-    def test_sum_list(self) -> None:
+    def test_sum_list(self: object) -> None:
+        """Verify sum list.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         assert sum_list([1, 2, 3, 4, 5]) == 15
         assert sum_list([]) == 0
         assert sum_list([-1, 1]) == 0
 
-    def test_first_non_empty(self) -> None:
+    def test_first_non_empty(self: object) -> None:
+        """Verify first non empty.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         assert first_non_empty(["", "hello", "world"]) == "hello"
         assert first_non_empty(["test"]) == "test"
         assert first_non_empty(["", "", ""]) is None
         assert first_non_empty([]) is None
 
-    def test_toggle(self) -> None:
+    def test_toggle(self: object) -> None:
+        """Verify toggle.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         assert toggle(True) is False
         assert toggle(False) is True

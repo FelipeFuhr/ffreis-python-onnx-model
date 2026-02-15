@@ -1,19 +1,58 @@
+"""Tests for conftest."""
+
+from collections.abc import AsyncIterator, Iterator
+
 import httpx
 import pytest
 import pytest_asyncio
+from fastapi import FastAPI
 
 from application import create_application
 from config import Settings
+from parsed_types import ParsedInput
 
 
 class DummyAdapter:
-    def __init__(self, mode="list"):
+    """Test suite for DummyAdapter."""
+
+    def __init__(self: object, mode: str = "list") -> None:
+        """Initialize adapter mode for tests.
+
+        Parameters
+        ----------
+        mode : str
+            Parameter used by this test scenario.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         self.mode = mode
 
-    def is_ready(self):
+    def is_ready(self: object) -> bool:
+        """Report adapter readiness for tests.
+
+        Returns
+        -------
+        bool
+            Return value produced by helper logic in this test module.
+        """
         return True
 
-    def predict(self, parsed_input):
+    def predict(self: object, parsed_input: ParsedInput) -> object:
+        """Return deterministic outputs for fixture-backed tests.
+
+        Parameters
+        ----------
+        parsed_input : ParsedInput
+            Parsed input payload object passed to adapter methods.
+
+        Returns
+        -------
+        object
+            Return value produced by helper logic in this test module.
+        """
         if self.mode == "list":
             if parsed_input.X is not None:
                 n = parsed_input.X.shape[0]
@@ -28,7 +67,19 @@ class DummyAdapter:
 
 
 @pytest.fixture
-def base_env(monkeypatch):
+def base_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Set baseline environment variables for application tests.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+    Returns
+    -------
+    Iterator[None]
+        Return value produced by helper logic in this test module.
+    """
     monkeypatch.setenv("INPUT_MODE", "tabular")
     monkeypatch.setenv("DEFAULT_CONTENT_TYPE", "application/json")
     monkeypatch.setenv("DEFAULT_ACCEPT", "application/json")
@@ -49,13 +100,39 @@ def base_env(monkeypatch):
     yield
 
 
-def _make_client(app):
+def _make_client(app: FastAPI) -> httpx.AsyncClient:
+    """Create an ASGI test client for the given FastAPI application.
+
+    Parameters
+    ----------
+    app : FastAPI
+        FastAPI application instance under test.
+
+    Returns
+    -------
+    httpx.AsyncClient
+        Return value produced by helper logic in this test module.
+    """
     transport = httpx.ASGITransport(app=app)
     return httpx.AsyncClient(transport=transport, base_url="http://test")
 
 
 @pytest.fixture
-def app_list_adapter(monkeypatch, base_env):
+def app_list_adapter(monkeypatch: pytest.MonkeyPatch, base_env: None) -> FastAPI:
+    """Build app fixture backed by list-style dummy predictions.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+    base_env : None
+        Fixture that applies baseline environment variables used by application tests.
+
+    Returns
+    -------
+    FastAPI
+        Return value produced by helper logic in this test module.
+    """
     import application as application_module
 
     monkeypatch.setattr(
@@ -65,7 +142,21 @@ def app_list_adapter(monkeypatch, base_env):
 
 
 @pytest.fixture
-def app_dict_adapter(monkeypatch, base_env):
+def app_dict_adapter(monkeypatch: pytest.MonkeyPatch, base_env: None) -> FastAPI:
+    """Build app fixture backed by dict-style dummy predictions.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+    base_env : None
+        Fixture that applies baseline environment variables used by application tests.
+
+    Returns
+    -------
+    FastAPI
+        Return value produced by helper logic in this test module.
+    """
     import application as application_module
 
     monkeypatch.setattr(
@@ -75,12 +166,36 @@ def app_dict_adapter(monkeypatch, base_env):
 
 
 @pytest_asyncio.fixture
-async def client_list(app_list_adapter):
+async def client_list(app_list_adapter: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    """Provide async client fixture for list-adapter application.
+
+    Parameters
+    ----------
+    app_list_adapter : FastAPI
+        FastAPI application fixture configured with list-style adapter outputs.
+
+    Returns
+    -------
+    AsyncIterator[httpx.AsyncClient]
+        Return value produced by helper logic in this test module.
+    """
     async with _make_client(app_list_adapter) as client:
         yield client
 
 
 @pytest_asyncio.fixture
-async def client_dict(app_dict_adapter):
+async def client_dict(app_dict_adapter: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+    """Provide async client fixture for dict-adapter application.
+
+    Parameters
+    ----------
+    app_dict_adapter : FastAPI
+        FastAPI application fixture configured with dictionary-style adapter outputs.
+
+    Returns
+    -------
+    AsyncIterator[httpx.AsyncClient]
+        Return value produced by helper logic in this test module.
+    """
     async with _make_client(app_dict_adapter) as client:
         yield client

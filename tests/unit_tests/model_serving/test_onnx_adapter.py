@@ -1,3 +1,5 @@
+"""Tests for onnx adapter."""
+
 from pathlib import Path
 
 import numpy as np
@@ -37,13 +39,47 @@ def _write_two_output_model(path: Path) -> None:
 
 
 class TestOnnxAdapter:
-    def test_raises_when_model_is_missing(self, monkeypatch, tmp_path):
+    """Test suite for TestOnnxAdapter."""
+
+    def test_raises_when_model_is_missing(
+        self: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Validate raises when model is missing.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+        tmp_path : Path
+            Temporary directory path provided by pytest for filesystem test artifacts.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
         monkeypatch.setenv("MODEL_TYPE", "onnx")
         with pytest.raises(FileNotFoundError, match="ONNX model not found"):
             OnnxAdapter(Settings())
 
-    def test_predicts_from_tabular_input(self, monkeypatch, tmp_path):
+    def test_predicts_from_tabular_input(
+        self: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Validate predicts from tabular input.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+        tmp_path : Path
+            Temporary directory path provided by pytest for filesystem test artifacts.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         model_path = tmp_path / "model.onnx"
         _write_sum_model(model_path)
         monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
@@ -53,7 +89,23 @@ class TestOnnxAdapter:
         preds = adapter.predict(inp)
         assert preds == [[6.0], [15.0]]
 
-    def test_predicts_from_tensor_inputs_with_output_map(self, monkeypatch, tmp_path):
+    def test_predicts_from_tensor_inputs_with_output_map(
+        self: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Validate predicts from tensor inputs with output map.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+        tmp_path : Path
+            Temporary directory path provided by pytest for filesystem test artifacts.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         model_path = tmp_path / "model.onnx"
         _write_two_output_model(model_path)
         monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
@@ -69,7 +121,23 @@ class TestOnnxAdapter:
             "raw": [[1.0, 2.0], [3.0, 4.0]],
         }
 
-    def test_selects_named_output(self, monkeypatch, tmp_path):
+    def test_selects_named_output(
+        self: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Verify selects named output.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+        tmp_path : Path
+            Temporary directory path provided by pytest for filesystem test artifacts.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         model_path = tmp_path / "model.onnx"
         _write_two_output_model(model_path)
         monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
@@ -80,7 +148,23 @@ class TestOnnxAdapter:
         preds = adapter.predict(inp)
         assert preds == [[2.0, 4.0]]
 
-    def test_selects_output_by_index(self, monkeypatch, tmp_path):
+    def test_selects_output_by_index(
+        self: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Validate selects output by index.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+        tmp_path : Path
+            Temporary directory path provided by pytest for filesystem test artifacts.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         model_path = tmp_path / "model.onnx"
         _write_two_output_model(model_path)
         monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
@@ -91,7 +175,23 @@ class TestOnnxAdapter:
         preds = adapter.predict(inp)
         assert preds == [[2.0, 4.0]]
 
-    def test_rejects_empty_input(self, monkeypatch, tmp_path):
+    def test_rejects_empty_input(
+        self: object, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Verify rejects empty input.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+        tmp_path : Path
+            Temporary directory path provided by pytest for filesystem test artifacts.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         model_path = tmp_path / "model.onnx"
         _write_sum_model(model_path)
         monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))

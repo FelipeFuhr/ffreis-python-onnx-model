@@ -8,6 +8,7 @@ import os
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -28,6 +29,31 @@ class ModelProtocol(Protocol):
 
     def fit(self: ModelProtocol, features: np.ndarray, labels: object) -> object:
         """Fit model."""
+
+    def predict(self: ModelProtocol, features: np.ndarray) -> np.ndarray:
+        """Predict labels."""
+
+
+@dataclass(frozen=True)
+class ExampleResult:
+    """Summarized result for one train-and-serve example run.
+
+    Parameters
+    ----------
+    algorithm_name : str
+        Algorithm used for training.
+    model_path : pathlib.Path
+        Exported ONNX model path.
+    request_row_count : int
+        Number of rows sent to the inference endpoint.
+    max_abs_difference : float
+        Maximum absolute difference between sklearn and served predictions.
+    """
+
+    algorithm_name: str
+    model_path: Path
+    request_row_count: int
+    max_abs_difference: float
 
 
 def train_model(algorithm_name: str) -> tuple[ModelProtocol, np.ndarray]:
@@ -128,7 +154,7 @@ def temporary_environment(overrides: dict[str, str]) -> Iterator[None]:
 
 async def run_inference_request(
     model_directory: Path, rows: np.ndarray
-) -> list[object]:
+) -> tuple[int, int, int, list[object]]:
     """Run an inference request through the real HTTP application.
 
     Parameters
@@ -140,8 +166,8 @@ async def run_inference_request(
 
     Returns
     -------
-    list[object]
-        Parsed JSON predictions.
+    tuple[int, int, int, list[object]]
+        ``(live_status, ready_status, invocations_status, predictions_json)``.
     """
     payload = "\n".join(",".join(map(str, row.tolist())) for row in rows).encode(
         "utf-8"
@@ -161,6 +187,12 @@ async def run_inference_request(
         async with httpx.AsyncClient(
             transport=transport, base_url="http://test"
         ) as client:
+            liveness_response = await client.get("/live")
+            if liveness_response.status_code != 200:
+                raise RuntimeError(
+                    f"Liveness failed with status={liveness_response.status_code}"
+                )
+
             readiness_response = await client.get("/ready")
             if readiness_response.status_code != 200:
                 raise RuntimeError(
@@ -178,16 +210,63 @@ async def run_inference_request(
                     f"status={invocation_response.status_code}, "
                     f"body={invocation_response.text}"
                 )
-            return cast(list[object], invocation_response.json())
+            return (
+                liveness_response.status_code,
+                readiness_response.status_code,
+                invocation_response.status_code,
+                cast(list[object], invocation_response.json()),
+            )
 
 
-def run_train_and_serve_demo(algorithm_name: str) -> None:
+def _to_label_vector(raw_predictions: list[object], expected_rows: int) -> np.ndarray:
+    """Normalize served predictions to a 1D numeric label vector.
+
+    Parameters
+    ----------
+    raw_predictions : list[object]
+        JSON-decoded prediction payload.
+    expected_rows : int
+        Expected number of predictions.
+
+    Returns
+    -------
+    numpy.ndarray
+        One-dimensional label vector.
+    """
+    prediction_array = np.asarray(raw_predictions)
+    if prediction_array.size == 0:
+        raise SystemExit("FAIL: invocation returned no predictions.")
+    if prediction_array.ndim == 2 and prediction_array.shape[1] == 1:
+        prediction_array = prediction_array[:, 0]
+    if prediction_array.ndim != 1:
+        raise SystemExit(
+            "FAIL: expected vector-like predictions, "
+            f"got shape={prediction_array.shape}."
+        )
+    if prediction_array.shape[0] != expected_rows:
+        raise SystemExit(
+            "FAIL: prediction count mismatch "
+            f"(expected={expected_rows}, got={prediction_array.shape[0]})."
+        )
+    if not np.issubdtype(prediction_array.dtype, np.number):
+        raise SystemExit(
+            f"FAIL: expected numeric predictions, got dtype={prediction_array.dtype}."
+        )
+    return prediction_array.astype(np.float64)
+
+
+def run_train_and_serve_demo(algorithm_name: str) -> ExampleResult:
     """Train, export, and serve an ONNX model for one algorithm.
 
     Parameters
     ----------
     algorithm_name : str
         Model algorithm name.
+
+    Returns
+    -------
+    ExampleResult
+        Example execution summary.
     """
     model, features = train_model(algorithm_name)
     model_directory = REPOSITORY_ROOT / "tmp" / "examples" / algorithm_name
@@ -196,6 +275,47 @@ def run_train_and_serve_demo(algorithm_name: str) -> None:
         feature_count=features.shape[1],
         output_path=model_directory / "model.onnx",
     )
+    if not model_path.exists() or model_path.stat().st_size == 0:
+        raise SystemExit(f"FAIL: ONNX model was not created at {model_path}.")
 
-    predictions = asyncio.run(run_inference_request(model_directory, features[:4]))
-    print(f"[{algorithm_name}] model={model_path} predictions={predictions}")
+    batch = features[:8]
+    sklearn_predictions = np.asarray(model.predict(batch), dtype=np.float64).reshape(-1)
+
+    live_code, ready_code, invocation_code, raw_predictions = asyncio.run(
+        run_inference_request(model_directory, batch)
+    )
+    served_predictions = _to_label_vector(raw_predictions, expected_rows=batch.shape[0])
+
+    if live_code != 200 or ready_code != 200 or invocation_code != 200:
+        raise SystemExit(
+            "FAIL: health/invocation status codes were unexpected "
+            f"(live={live_code}, ready={ready_code}, invocations={invocation_code})."
+        )
+
+    if sklearn_predictions.shape != served_predictions.shape:
+        raise SystemExit(
+            "FAIL: sklearn/served shape mismatch "
+            f"(sklearn={sklearn_predictions.shape}, "
+            f"served={served_predictions.shape})."
+        )
+
+    max_abs_difference = float(np.max(np.abs(sklearn_predictions - served_predictions)))
+    if not np.array_equal(sklearn_predictions, served_predictions):
+        raise SystemExit(
+            "FAIL: prediction mismatch between sklearn and serving "
+            f"(max_abs_diff={max_abs_difference:.6f})."
+        )
+
+    print(
+        "PASS: "
+        f"algorithm={algorithm_name} "
+        f"model={model_path} "
+        f"rows={batch.shape[0]} "
+        f"max_abs_diff={max_abs_difference:.6f}"
+    )
+    return ExampleResult(
+        algorithm_name=algorithm_name,
+        model_path=model_path,
+        request_row_count=int(batch.shape[0]),
+        max_abs_difference=max_abs_difference,
+    )

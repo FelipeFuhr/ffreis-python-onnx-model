@@ -1,3 +1,5 @@
+"""Test module."""
+
 import types
 
 import pytest
@@ -13,24 +15,71 @@ pytestmark = pytest.mark.unit
 
 
 class _Recorder:
-    def __init__(self):
+    def __init__(self: object) -> None:
         self.calls = []
 
-    def add(self, *args, **kwargs):
+    def add(self: object, *args: object, **kwargs: object) -> object:
+        """Run add.
+
+        Parameters
+        ----------
+        args : object
+            Parameter used by this test scenario.
+        kwargs : object
+            Parameter used by this test scenario.
+
+        Returns
+        -------
+        object
+            Return value produced by helper logic in this test module.
+        """
         self.calls.append((args, kwargs))
 
 
-def test_parse_headers_handles_empty_and_pairs():
+def test_parse_headers_handles_empty_and_pairs() -> None:
+    """Validate parse headers handles empty and pairs.
+
+    Returns
+    -------
+    None
+        Does not return a value; assertions validate expected behavior.
+    """
     assert _parse_headers("") == {}
     assert _parse_headers("a=b, c=d ,bad, x=1=2") == {"a": "b", "c": "d", "x": "1=2"}
 
 
-def test_setup_telemetry_returns_false_when_disabled(monkeypatch):
+def test_setup_telemetry_returns_false_when_disabled(monkeypatch: object) -> None:
+    """Validate setup telemetry returns false when disabled.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+    Returns
+    -------
+    None
+        Does not return a value; assertions validate expected behavior.
+    """
     monkeypatch.setenv("OTEL_ENABLED", "false")
     assert setup_telemetry(Settings()) is False
 
 
-def test_setup_telemetry_returns_false_when_dependencies_missing(monkeypatch):
+def test_setup_telemetry_returns_false_when_dependencies_missing(
+    monkeypatch: object,
+) -> None:
+    """Validate setup telemetry returns false when dependencies missing.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+    Returns
+    -------
+    None
+        Does not return a value; assertions validate expected behavior.
+    """
     monkeypatch.setenv("OTEL_ENABLED", "true")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector")
     import telemetry as telemetry_module
@@ -39,7 +88,19 @@ def test_setup_telemetry_returns_false_when_dependencies_missing(monkeypatch):
     assert setup_telemetry(Settings()) is False
 
 
-def test_setup_telemetry_returns_false_without_endpoint(monkeypatch):
+def test_setup_telemetry_returns_false_without_endpoint(monkeypatch: object) -> None:
+    """Validate setup telemetry returns false without endpoint.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+    Returns
+    -------
+    None
+        Does not return a value; assertions validate expected behavior.
+    """
     monkeypatch.setenv("OTEL_ENABLED", "true")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
     import telemetry as telemetry_module
@@ -52,7 +113,19 @@ def test_setup_telemetry_returns_false_without_endpoint(monkeypatch):
     assert setup_telemetry(Settings()) is False
 
 
-def test_setup_telemetry_happy_path(monkeypatch):
+def test_setup_telemetry_happy_path(monkeypatch: object) -> None:
+    """Validate setup telemetry happy path.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+    Returns
+    -------
+    None
+        Does not return a value; assertions validate expected behavior.
+    """
     monkeypatch.setenv("OTEL_ENABLED", "true")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector")
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "a=b")
@@ -67,26 +140,60 @@ def test_setup_telemetry_happy_path(monkeypatch):
     provider_rec = _Recorder()
 
     class FakeProvider:
-        def __init__(self, resource):
+        """Test suite."""
+
+        def __init__(self: object, resource: object) -> None:
             provider_rec.add(resource=resource)
 
-        def add_span_processor(self, processor):
+        def add_span_processor(self: object, processor: object) -> object:
+            """Run add span processor.
+
+            Parameters
+            ----------
+            processor : object
+                Parameter used by this test scenario.
+
+            Returns
+            -------
+            object
+                Return value produced by helper logic in this test module.
+            """
             provider_rec.add(processor=processor)
 
     class FakeResource:
+        """Test suite."""
+
         @staticmethod
-        def create(payload):
+        def create(payload: object) -> object:
+            """Run create.
+
+            Parameters
+            ----------
+            payload : object
+                Raw payload bytes used to exercise parsing or invocation behavior.
+
+            Returns
+            -------
+            object
+                Return value produced by helper logic in this test module.
+            """
             resource_rec.add(payload=payload)
             return {"resource": payload}
 
     class FakeExporter:
-        def __init__(self, endpoint, headers, timeout):
+        """Test suite."""
+
+        def __init__(
+            self: object, endpoint: object, headers: object, timeout: object
+        ) -> None:
             self.endpoint = endpoint
             self.headers = headers
             self.timeout = timeout
 
     class FakeBatch:
-        def __init__(self, exporter):
+        """Test suite."""
+
+        def __init__(self: object, exporter: object) -> None:
             self.exporter = exporter
 
     monkeypatch.setattr(
@@ -124,7 +231,19 @@ def test_setup_telemetry_happy_path(monkeypatch):
     assert log_rec.calls
 
 
-def test_instrument_fastapi_when_enabled(monkeypatch):
+def test_instrument_fastapi_when_enabled(monkeypatch: object) -> None:
+    """Validate instrument fastapi when enabled.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+    Returns
+    -------
+    None
+        Does not return a value; assertions validate expected behavior.
+    """
     monkeypatch.setenv("OTEL_ENABLED", "true")
     import telemetry as telemetry_module
 
@@ -141,7 +260,19 @@ def test_instrument_fastapi_when_enabled(monkeypatch):
     assert rec.calls
 
 
-def test_instrument_fastapi_noop_when_disabled(monkeypatch):
+def test_instrument_fastapi_noop_when_disabled(monkeypatch: object) -> None:
+    """Validate instrument fastapi noop when disabled.
+
+    Parameters
+    ----------
+    monkeypatch : object
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+    Returns
+    -------
+    None
+        Does not return a value; assertions validate expected behavior.
+    """
     monkeypatch.setenv("OTEL_ENABLED", "false")
     import telemetry as telemetry_module
 

@@ -1,3 +1,5 @@
+"""Tests for real inference pipeline."""
+
 from pathlib import Path
 
 import httpx
@@ -25,7 +27,23 @@ def _write_tiny_sum_model(path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_real_model_pipeline_integration(monkeypatch, tmp_path):
+async def test_real_model_pipeline_integration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Validate real model pipeline integration.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+    tmp_path : Path
+        Temporary directory path provided by pytest for filesystem test artifacts.
+
+    Returns
+    -------
+    None
+        Does not return a value; assertions validate expected behavior.
+    """
     model_path = tmp_path / "model.onnx"
     _write_tiny_sum_model(model_path)
 

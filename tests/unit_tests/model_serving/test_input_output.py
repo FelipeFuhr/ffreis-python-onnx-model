@@ -1,3 +1,5 @@
+"""Tests for input output."""
+
 import json
 
 import numpy as np
@@ -10,21 +12,56 @@ pytestmark = pytest.mark.unit
 
 
 class TestParsePayload:
-    def test_csv_parse_basic(self, monkeypatch):
+    """Test suite for TestParsePayload."""
+
+    def test_csv_parse_basic(self: object, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Verify csv parse basic.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("CSV_HAS_HEADER", "false")
         settings = Settings()
         parsed = parse_payload(b"1,2,3\n4,5,6\n", "text/csv", settings)
         assert parsed.X.shape == (2, 3)
         assert parsed.tensors is None
 
-    def test_json_parse_instances(self):
+    def test_json_parse_instances(self: object) -> None:
+        """Verify json parse instances.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         settings = Settings()
         parsed = parse_payload(
             b'{"instances":[[1,2],[3,4]]}', "application/json", settings
         )
         assert parsed.X.shape == (2, 2)
 
-    def test_jsonl_parse_features_key(self, monkeypatch):
+    def test_jsonl_parse_features_key(
+        self: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify jsonl parse features key.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("JSONL_FEATURES_KEY", "features")
         settings = Settings()
         parsed = parse_payload(
@@ -34,13 +71,41 @@ class TestParsePayload:
         )
         assert parsed.X.shape == (2, 3)
 
-    def test_strict_feature_count(self, monkeypatch):
+    def test_strict_feature_count(
+        self: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify strict feature count.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("TABULAR_NUM_FEATURES", "3")
         settings = Settings()
         with pytest.raises(ValueError, match="Feature count mismatch"):
             parse_payload(b"1,2\n3,4\n", "text/csv", settings)
 
-    def test_split_id_and_feature_columns(self, monkeypatch):
+    def test_split_id_and_feature_columns(
+        self: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify split id and feature columns.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("TABULAR_ID_COLUMNS", "0")
         monkeypatch.setenv("TABULAR_FEATURE_COLUMNS", "1:3")
         settings = Settings()
@@ -48,18 +113,53 @@ class TestParsePayload:
         assert parsed.X.tolist() == [[1.0, 2.0], [3.0, 4.0]]
         assert parsed.meta == {"ids": [[9.0], [8.0]], "id_columns": [0]}
 
-    def test_rejects_unsupported_content_type(self):
+    def test_rejects_unsupported_content_type(self: object) -> None:
+        """Verify rejects unsupported content type.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         settings = Settings()
         with pytest.raises(ValueError, match="Unsupported Content-Type"):
             parse_payload(b"<x/>", "application/xml", settings)
 
-    def test_rejects_non_tabular_mode(self, monkeypatch):
+    def test_rejects_non_tabular_mode(
+        self: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify rejects non tabular mode.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("INPUT_MODE", "image")
         settings = Settings()
         with pytest.raises(ValueError, match="not implemented"):
             parse_payload(b"1,2", "text/csv", settings)
 
-    def test_onnx_multi_input_builds_tensors(self, monkeypatch):
+    def test_onnx_multi_input_builds_tensors(
+        self: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify onnx multi input builds tensors.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv(
             "ONNX_INPUT_MAP_JSON",
             '{"input_ids":"input_ids","attention_mask":"attention_mask"}',
@@ -82,7 +182,21 @@ class TestParsePayload:
         assert parsed.tensors["input_ids"].dtype == np.int64
         assert parsed.tensors["attention_mask"].shape[0] == 2
 
-    def test_onnx_multi_input_dtype_by_onnx_name(self, monkeypatch):
+    def test_onnx_multi_input_dtype_by_onnx_name(
+        self: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify onnx multi input dtype by onnx name.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("ONNX_INPUT_MAP_JSON", '{"ids":"input_ids"}')
         monkeypatch.setenv("ONNX_INPUT_DTYPE_MAP_JSON", '{"input_ids":"int64"}')
         settings = Settings()
@@ -91,7 +205,21 @@ class TestParsePayload:
         parsed = parse_payload(payload, "application/json", settings)
         assert parsed.tensors["input_ids"].dtype == np.int64
 
-    def test_onnx_multi_input_requires_record_keys(self, monkeypatch):
+    def test_onnx_multi_input_requires_record_keys(
+        self: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify onnx multi input requires record keys.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv(
             "ONNX_INPUT_MAP_JSON", '{"ids":"input_ids","mask":"attention_mask"}'
         )
@@ -100,7 +228,21 @@ class TestParsePayload:
         with pytest.raises(ValueError, match="Missing key 'mask'"):
             parse_payload(payload, "application/json", settings)
 
-    def test_onnx_multi_input_requires_object_records(self, monkeypatch):
+    def test_onnx_multi_input_requires_object_records(
+        self: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Validate onnx multi input requires object records.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("ONNX_INPUT_MAP_JSON", '{"ids":"input_ids"}')
         settings = Settings()
         payload = b'{"instances":[[1,2,3],[4,5,6]]}'
@@ -109,7 +251,16 @@ class TestParsePayload:
 
 
 class TestFormatOutput:
-    def test_dict_forces_json(self):
+    """Test suite for TestFormatOutput."""
+
+    def test_dict_forces_json(self: object) -> None:
+        """Verify dict forces json.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         settings = Settings()
         body, content_type = format_output(
             {"a": [1]}, accept="text/csv", settings=settings
@@ -117,7 +268,14 @@ class TestFormatOutput:
         assert content_type == "application/json"
         assert json.loads(body) == {"a": [1]}
 
-    def test_csv_from_vector(self):
+    def test_csv_from_vector(self: object) -> None:
+        """Verify csv from vector.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         settings = Settings()
         body, content_type = format_output(
             [1, 2, 3], accept="text/csv", settings=settings
@@ -125,7 +283,14 @@ class TestFormatOutput:
         assert content_type == "text/csv"
         assert body == "1\n2\n3"
 
-    def test_csv_from_matrix(self):
+    def test_csv_from_matrix(self: object) -> None:
+        """Verify csv from matrix.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         settings = Settings()
         body, content_type = format_output(
             [[1, 2], [3, 4]], accept="text/csv", settings=settings
@@ -133,7 +298,21 @@ class TestFormatOutput:
         assert content_type == "text/csv"
         assert body == "1,2\n3,4"
 
-    def test_wrapped_json_when_predictions_only_false(self, monkeypatch):
+    def test_wrapped_json_when_predictions_only_false(
+        self: object, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Validate wrapped json when predictions only false.
+
+        Parameters
+        ----------
+        monkeypatch : pytest.MonkeyPatch
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("RETURN_PREDICTIONS_ONLY", "false")
         monkeypatch.setenv("JSON_OUTPUT_KEY", "outputs")
         settings = Settings()

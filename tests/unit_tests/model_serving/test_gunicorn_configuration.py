@@ -1,3 +1,5 @@
+"""Tests for gunicorn configuration."""
+
 import importlib
 
 import pytest
@@ -5,7 +7,21 @@ import pytest
 pytestmark = pytest.mark.unit
 
 
-def test_gunicorn_configuration_uses_settings_from_env(monkeypatch):
+def test_gunicorn_configuration_uses_settings_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify gunicorn configuration uses settings from env.
+
+    Parameters
+    ----------
+    monkeypatch : pytest.MonkeyPatch
+        Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+    Returns
+    -------
+    None
+        Does not return a value; assertions validate expected behavior.
+    """
     monkeypatch.setenv("PORT", "9999")
     monkeypatch.setenv("GUNICORN_WORKERS", "3")
     monkeypatch.setenv("GUNICORN_THREADS", "9")

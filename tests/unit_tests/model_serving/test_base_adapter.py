@@ -1,3 +1,5 @@
+"""Test module."""
+
 import os
 
 import pytest
@@ -9,24 +11,69 @@ pytestmark = pytest.mark.unit
 
 
 class _RaisesAdapter(BaseAdapter):
-    def is_ready(self) -> bool:
+    def is_ready(self: object) -> bool:
+        """Run is ready.
+
+        Returns
+        -------
+        bool
+            Return value produced by helper logic in this test module.
+        """
         return BaseAdapter.is_ready(self)
 
-    def predict(self, parsed_input):
+    def predict(self: object, parsed_input: object) -> object:
+        """Run predict.
+
+        Parameters
+        ----------
+        parsed_input : object
+            Parsed input payload object passed to adapter methods.
+
+        Returns
+        -------
+        object
+            Return value produced by helper logic in this test module.
+        """
         return BaseAdapter.predict(self, parsed_input)
 
 
 class TestBaseAdapter:
-    def test_base_methods_raise_not_implemented(self):
+    """Test suite."""
+
+    def test_base_methods_raise_not_implemented(self: object) -> None:
+        """Validate base methods raise not implemented.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         adapter = _RaisesAdapter()
         with pytest.raises(NotImplementedError):
             adapter.is_ready()
         with pytest.raises(NotImplementedError):
             adapter.predict(None)
 
-    def test_load_adapter_uses_onnx_when_model_type_is_onnx(self, monkeypatch):
+    def test_load_adapter_uses_onnx_when_model_type_is_onnx(
+        self: object, monkeypatch: object
+    ) -> None:
+        """Validate load adapter uses onnx when model type is onnx.
+
+        Parameters
+        ----------
+        monkeypatch : object
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
+
         class FakeOnnx:
-            def __init__(self, settings):
+            """Test suite."""
+
+            def __init__(self: object, settings: object) -> None:
                 self.settings = settings
 
         import onnx_adapter as onnx_mod
@@ -38,13 +85,29 @@ class TestBaseAdapter:
         assert isinstance(out, FakeOnnx)
 
     def test_load_adapter_uses_onnx_when_default_model_exists(
-        self, monkeypatch, tmp_path
-    ):
+        self: object, monkeypatch: object, tmp_path: object
+    ) -> None:
+        """Validate load adapter uses onnx when default model exists.
+
+        Parameters
+        ----------
+        monkeypatch : object
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+        tmp_path : object
+            Temporary directory path provided by pytest for filesystem test artifacts.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         model_path = tmp_path / "model.onnx"
         model_path.write_bytes(b"x")
 
         class FakeOnnx:
-            def __init__(self, settings):
+            """Test suite."""
+
+            def __init__(self: object, settings: object) -> None:
                 self.settings = settings
 
         import onnx_adapter as onnx_mod
@@ -57,13 +120,43 @@ class TestBaseAdapter:
         assert isinstance(out, FakeOnnx)
         assert os.path.exists(model_path)
 
-    def test_load_adapter_rejects_non_onnx_types(self, monkeypatch):
+    def test_load_adapter_rejects_non_onnx_types(
+        self: object, monkeypatch: object
+    ) -> None:
+        """Validate load adapter rejects non onnx types.
+
+        Parameters
+        ----------
+        monkeypatch : object
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("MODEL_TYPE", "sklearn")
         settings = Settings()
         with pytest.raises(RuntimeError, match="not implemented"):
             load_adapter(settings)
 
-    def test_load_adapter_requires_model_type_or_file(self, monkeypatch, tmp_path):
+    def test_load_adapter_requires_model_type_or_file(
+        self: object, monkeypatch: object, tmp_path: object
+    ) -> None:
+        """Validate load adapter requires model type or file.
+
+        Parameters
+        ----------
+        monkeypatch : object
+            Pytest monkeypatch fixture used to configure environment and runtime hooks.
+        tmp_path : object
+            Temporary directory path provided by pytest for filesystem test artifacts.
+
+        Returns
+        -------
+        None
+            Does not return a value; assertions validate expected behavior.
+        """
         monkeypatch.setenv("MODEL_TYPE", "")
         monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
         settings = Settings()

@@ -1,3 +1,5 @@
+"""Tests for live server inference."""
+
 import os
 import socket
 import subprocess
@@ -49,7 +51,19 @@ def _wait_for_ping(base_url: str, timeout_s: float = 15.0) -> None:
     raise RuntimeError("Server did not become ready in time")
 
 
-def test_live_server_end_to_end_inference(tmp_path):
+def test_live_server_end_to_end_inference(tmp_path: Path) -> None:
+    """Verify live server end to end inference.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Temporary directory path provided by pytest for filesystem test artifacts.
+
+    Returns
+    -------
+    None
+        Does not return a value; assertions validate expected behavior.
+    """
     project_root = Path(__file__).resolve().parents[2]
     model_path = tmp_path / "model.onnx"
     _write_tiny_sum_model(model_path)
