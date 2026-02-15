@@ -287,7 +287,8 @@ class InferenceApplicationBuilder:
         try:
             return await self._run_inference(request=request, start_time=start_time)
         except ValueError as error:
-            return JSONResponse({"error": str(error)}, status_code=400)
+            log.warning("Bad request: %s", error)
+            return JSONResponse({"error": "invalid_request"}, status_code=400)
         except Exception:
             log.exception("Inference failed")
             return JSONResponse({"error": "internal_server_error"}, status_code=500)
