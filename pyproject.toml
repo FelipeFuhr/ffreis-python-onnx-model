@@ -95,6 +95,7 @@ branch = true
 source = ["src"]
 parallel = true
 patch = ["subprocess"]
+omit = ["src/onnx_serving_grpc/*"]
 
 [tool.coverage.report]
 show_missing = true

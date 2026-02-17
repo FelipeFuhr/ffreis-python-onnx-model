@@ -39,12 +39,15 @@ jobs:
         with:
           python-version: "3.13"
 
+      - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b
+        with:
+          enable-cache: true
+
       - name: Generate coverage
         run: |
           set -euo pipefail
-          make env
-          make build-local
-          make coverage
+          uv sync --extra dev --extra grpc
+          uv run pytest -q --cov=src --cov-report=term --cov-report=xml:coverage.xml
           test -s coverage.xml
 
       - name: Upload coverage to Codecov
