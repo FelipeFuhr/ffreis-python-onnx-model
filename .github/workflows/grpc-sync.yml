@@ -18,11 +18,15 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
+      - name: Set up uv
+        uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (uv)
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,grpc]"
+          uv sync --extra dev --extra grpc
 
       - name: Check generated gRPC stubs are current
         run: |
@@ -32,4 +36,4 @@ jobs:
       - name: Run gRPC/API parity test
         run: |
           set -euo pipefail
-          pytest -q tests/integration_tests/test_grpc_parity.py
+          uv run pytest -q tests/integration_tests/test_grpc_parity.py

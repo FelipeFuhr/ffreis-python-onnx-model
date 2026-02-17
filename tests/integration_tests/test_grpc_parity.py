@@ -6,15 +6,20 @@ import json
 from dataclasses import dataclass
 from typing import Any, cast
 
-import grpc
 import httpx
 import pytest
 
 from application import create_application
 from config import Settings
 from onnx_model_serving.grpc.server import InferenceGrpcService
-from onnx_serving_grpc import inference_pb2
 from parsed_types import ParsedInput
+
+try:
+    import grpc
+
+    from onnx_serving_grpc import inference_pb2
+except ModuleNotFoundError as exc:
+    pytest.skip(f"grpc parity dependencies unavailable: {exc}", allow_module_level=True)
 
 pytestmark = pytest.mark.integration
 
@@ -54,10 +59,10 @@ class _DummyAdapter:
 class _RecordingContext:
     """Minimal context mock to capture gRPC error status."""
 
-    code: grpc.StatusCode | None = None
+    code: object | None = None
     details: str | None = None
 
-    def set_code(self: _RecordingContext, code: grpc.StatusCode) -> None:
+    def set_code(self: _RecordingContext, code: object) -> None:
         """Capture status code."""
         self.code = code
 
