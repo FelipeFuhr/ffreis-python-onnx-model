@@ -3,22 +3,86 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import logging
 from concurrent import futures
-from typing import Any, Protocol, cast
+from dataclasses import dataclass, field
+from types import ModuleType
+from typing import Protocol, cast
 
 import grpc
 
 from base_adapter import BaseAdapter, load_adapter
 from config import Settings
 from input_output import format_output, parse_payload
-from onnx_serving_grpc import inference_pb2 as _inference_pb2
-from onnx_serving_grpc import inference_pb2_grpc as _inference_pb2_grpc
 from parsed_types import ParsedInput
 
 log = logging.getLogger("byoc.grpc")
-inference_pb2: Any = cast(Any, _inference_pb2)
-inference_pb2_grpc: Any = cast(Any, _inference_pb2_grpc)
+
+
+@dataclass
+class _FallbackStatusReply:
+    """Fallback status reply used when generated stubs are unavailable."""
+
+    ok: bool = False
+    status: str = ""
+
+
+@dataclass
+class _FallbackPredictReply:
+    """Fallback predict reply used when generated stubs are unavailable."""
+
+    body: bytes = b""
+    content_type: str = ""
+    metadata: dict[str, str] = field(default_factory=dict)
+
+
+def _load_grpc_stub_module(module_name: str) -> ModuleType | None:
+    """Load grpc generated module by name when present."""
+    try:
+        return importlib.import_module(module_name)
+    except ModuleNotFoundError:
+        return None
+
+
+_INFERENCE_PB2 = _load_grpc_stub_module("onnx_serving_grpc.inference_pb2")
+_INFERENCE_PB2_GRPC = _load_grpc_stub_module("onnx_serving_grpc.inference_pb2_grpc")
+
+
+def _status_reply(*, ok: bool, status: str) -> object:
+    """Create status reply from generated stubs or fallback type."""
+    if _INFERENCE_PB2 is None:
+        return _FallbackStatusReply(ok=ok, status=status)
+    return _INFERENCE_PB2.StatusReply(ok=ok, status=status)
+
+
+def _predict_reply(
+    *,
+    body: bytes = b"",
+    content_type: str = "",
+    metadata: dict[str, str] | None = None,
+) -> object:
+    """Create predict reply from generated stubs or fallback type."""
+    if _INFERENCE_PB2 is None:
+        return _FallbackPredictReply(
+            body=body,
+            content_type=content_type,
+            metadata=metadata or {},
+        )
+    return _INFERENCE_PB2.PredictReply(
+        body=body,
+        content_type=content_type,
+        metadata=metadata or {},
+    )
+
+
+def _require_grpc_stubs_module() -> ModuleType:
+    """Return generated grpc service module or raise actionable error."""
+    if _INFERENCE_PB2_GRPC is None:
+        raise RuntimeError(
+            "gRPC stubs are missing. Run ./scripts/generate_grpc_stubs.sh first."
+        )
+    return _INFERENCE_PB2_GRPC
 
 
 class _PredictRequestLike(Protocol):
@@ -60,7 +124,7 @@ def _batch_size(parsed: ParsedInput) -> int:
     raise ValueError("Parsed input contained no features/tensors")
 
 
-class InferenceGrpcService(inference_pb2_grpc.InferenceServiceServicer):  # type: ignore[misc]
+class InferenceGrpcService:
     """gRPC inference service implementation."""
 
     def __init__(self: InferenceGrpcService, settings: Settings) -> None:
@@ -81,7 +145,7 @@ class InferenceGrpcService(inference_pb2_grpc.InferenceServiceServicer):  # type
     ) -> object:
         """Report process liveness."""
         _ = (request, context)
-        return inference_pb2.StatusReply(ok=True, status="live")
+        return _status_reply(ok=True, status="live")
 
     def Ready(  # noqa: N802
         self: InferenceGrpcService,
@@ -91,7 +155,7 @@ class InferenceGrpcService(inference_pb2_grpc.InferenceServiceServicer):  # type
         """Report model readiness."""
         _ = (request, context)
         is_ready = bool(self.adapter.is_ready())
-        return inference_pb2.StatusReply(
+        return _status_reply(
             ok=is_ready,
             status="ready" if is_ready else "not_ready",
         )
@@ -127,18 +191,18 @@ class InferenceGrpcService(inference_pb2_grpc.InferenceServiceServicer):  # type
                 settings=self.settings,
             )
             body_bytes = body if isinstance(body, bytes) else body.encode("utf-8")
-            return inference_pb2.PredictReply(
+            return _predict_reply(
                 body=body_bytes,
                 content_type=output_content_type,
                 metadata={"batch_size": str(batch_size)},
             )
         except ValueError as exc:
             _set_grpc_error(context, grpc.StatusCode.INVALID_ARGUMENT, str(exc))
-            return inference_pb2.PredictReply()
+            return _predict_reply()
         except Exception as exc:  # pragma: no cover - unexpected adapter/runtime errors
             log.exception("Predict RPC failed")
             _set_grpc_error(context, grpc.StatusCode.INTERNAL, str(exc))
-            return inference_pb2.PredictReply()
+            return _predict_reply()
 
 
 def create_server(
@@ -167,7 +231,8 @@ def create_server(
         Configured server.
     """
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
-    inference_pb2_grpc.add_InferenceServiceServicer_to_server(
+    grpc_stubs = _require_grpc_stubs_module()
+    grpc_stubs.add_InferenceServiceServicer_to_server(
         InferenceGrpcService(settings),
         server,
     )

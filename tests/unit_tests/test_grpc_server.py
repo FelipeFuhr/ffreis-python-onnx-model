@@ -234,9 +234,11 @@ def test_create_server_registers_service(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(module.grpc, "server", _fake_grpc_server)
     monkeypatch.setattr(
-        module.inference_pb2_grpc,
-        "add_InferenceServiceServicer_to_server",
-        _fake_register,
+        module,
+        "_require_grpc_stubs_module",
+        lambda: types.SimpleNamespace(
+            add_InferenceServiceServicer_to_server=_fake_register
+        ),
     )
     created = module.create_server(
         Settings(),

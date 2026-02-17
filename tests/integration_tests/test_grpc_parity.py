@@ -16,9 +16,9 @@ from parsed_types import ParsedInput
 try:
     import grpc
 
+    import onnx_serving_grpc.inference_pb2 as inference_pb2
     from onnx_model_serving.grpc.server import InferenceGrpcService
-    from onnx_serving_grpc import inference_pb2
-except ModuleNotFoundError as exc:
+except (ImportError, ModuleNotFoundError) as exc:
     pytest.skip(f"grpc parity dependencies unavailable: {exc}", allow_module_level=True)
 
 pytestmark = pytest.mark.integration
