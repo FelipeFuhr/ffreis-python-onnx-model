@@ -68,25 +68,16 @@ jobs:
       - name: Grype scan (SARIF)
         run: |
           set -euo pipefail
-          mkdir -p artifacts grype-results
+          mkdir -p grype-results
           images=(ffreis/base ffreis/base-builder ffreis/builder ffreis/base-runner ffreis/runner)
 
           for image in "${images[@]}"; do
             name="${image##*/}"
-            tar="artifacts/${name}.tar"
             out="grype-results/${name}.sarif"
 
-            podman save -o "$tar" "$image"
-            test -s "$tar"
-
-            if ./bin/grype "oci-archive:${tar}" -o sarif --file "$out" --fail-on high; then
-              :
-            else
-              ./bin/grype "docker-archive:${tar}" -o sarif --file "$out" --fail-on high
-            fi
+            ./bin/grype "podman:${image}" -o sarif --file "$out" --fail-on high
 
             test -s "$out"
-            rm -f "$tar"
           done
 
       - name: Upload Grype SARIF (per image)

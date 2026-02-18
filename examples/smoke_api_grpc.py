@@ -5,40 +5,54 @@ from __future__ import annotations
 import json
 import os
 import time
-import urllib.request
+from urllib.parse import urlparse
 
 import grpc
+import httpx
 
 from onnx_serving_grpc import inference_pb2
 
 
-def _wait_http_ok(url: str, timeout_seconds: float = 40.0) -> bytes:
+def _validate_http_base(api_base: str) -> None:
+    """Validate API base URL uses HTTP(S) scheme."""
+    parsed = urlparse(api_base)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(
+            "SERVING_API_BASE must use http or https scheme; "
+            f"got {parsed.scheme or '<empty>'}"
+        )
+
+
+def _wait_http_ok(
+    client: httpx.Client, path: str, timeout_seconds: float = 40.0
+) -> bytes:
     deadline = time.time() + timeout_seconds
     last_error: Exception | None = None
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=3.0) as response:  # noqa: S310
-                if response.status == 200:
-                    return response.read()
+            response = client.get(path)
+            if response.status_code == 200:
+                return response.content
         except Exception as exc:  # noqa: BLE001
             last_error = exc
         time.sleep(0.5)
-    raise RuntimeError(f"timed out waiting for HTTP 200 at {url}: {last_error}")
+    raise RuntimeError(f"timed out waiting for HTTP 200 at {path}: {last_error}")
 
 
 def _assert_http(api_base: str) -> bytes:
-    health = _wait_http_ok(f"{api_base}/healthz")
-    _wait_http_ok(f"{api_base}/readyz")
+    _validate_http_base(api_base)
+    with httpx.Client(base_url=api_base, timeout=5.0) as client:
+        health = _wait_http_ok(client, "/healthz")
+        _wait_http_ok(client, "/readyz")
 
-    payload = b"1,2,3\n4,5,6\n"
-    request = urllib.request.Request(
-        f"{api_base}/invocations",
-        data=payload,
-        headers={"Content-Type": "text/csv", "Accept": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=5.0) as response:  # noqa: S310
-        body = response.read()
+        payload = b"1,2,3\n4,5,6\n"
+        response = client.post(
+            "/invocations",
+            content=payload,
+            headers={"Content-Type": "text/csv", "Accept": "application/json"},
+        )
+        response.raise_for_status()
+        body = response.content
 
     assert health is not None
     parsed = json.loads(body.decode("utf-8"))

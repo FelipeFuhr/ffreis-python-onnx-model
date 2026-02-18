@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import types
 from pathlib import Path
-from typing import Self
+from typing import Any, Self, cast
 
 import numpy as np
 import pytest
@@ -24,6 +24,16 @@ class _FakeTensorflowModel:
     ) -> np.ndarray:
         _ = training
         return np.sum(features, axis=1, keepdims=True).astype(np.float32)
+
+
+class _NumpyScalarWrapper:
+    """Numpy-compatible scalar wrapper for conversion branch coverage."""
+
+    def __init__(self: Self, value: float) -> None:
+        self._value = value
+
+    def numpy(self: Self) -> float:
+        return self._value
 
 
 def _fake_tensorflow_module() -> object:
@@ -81,3 +91,72 @@ class TestTensorflowAdapter:
             ValueError, match="requires ParsedInput.X or ParsedInput.tensors"
         ):
             adapter.predict(ParsedInput())
+
+    def test_predict_rejects_invalid_parsed_input(
+        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Raise type error when parsed input object is invalid."""
+        model_path = tmp_path / "model.keras"
+        model_path.write_bytes(b"fake")
+
+        def _fake_import_module(name: str) -> object:
+            if name == "tensorflow":
+                return _fake_tensorflow_module()
+            raise ModuleNotFoundError(name)
+
+        monkeypatch.setattr("importlib.import_module", _fake_import_module)
+        monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
+        monkeypatch.setenv("MODEL_TYPE", "tensorflow")
+        adapter = TensorflowAdapter(Settings())
+
+        with pytest.raises(TypeError, match="TensorFlow adapter expects ParsedInput"):
+            adapter.predict(cast(Any, object()))
+
+    def test_predict_uses_predict_branch_and_nested_output_conversion(
+        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Use non-callable model and cover nested conversion branches."""
+        model_path = tmp_path / "model.keras"
+        model_path.write_bytes(b"fake")
+
+        class _PredictOnlyModel:
+            def predict(self: Self, features: np.ndarray, verbose: int = 0) -> object:
+                _ = verbose
+                summed = np.sum(features, axis=1, keepdims=True).astype(np.float32)
+                return {
+                    "predictions": summed,
+                    "details": (np.float32(3.0), _NumpyScalarWrapper(9.0)),
+                }
+
+        tensorflow_module = types.SimpleNamespace(
+            keras=types.SimpleNamespace(
+                models=types.SimpleNamespace(
+                    load_model=lambda _path: _PredictOnlyModel()
+                )
+            )
+        )
+
+        def _fake_import_module(name: str) -> object:
+            if name == "tensorflow":
+                return tensorflow_module
+            raise ModuleNotFoundError(name)
+
+        monkeypatch.setattr("importlib.import_module", _fake_import_module)
+        monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
+        monkeypatch.setenv("MODEL_TYPE", "tensorflow")
+        adapter = TensorflowAdapter(Settings())
+        adapter.model = cast(Any, _PredictOnlyModel())
+        result = adapter.predict(
+            ParsedInput(tensors={"x": np.asarray([1.0, 2.0, 3.0], dtype=np.float32)})
+        )
+        assert result == {"details": [3.0, 9.0], "predictions": [[6.0]]}
+
+    def test_raises_when_model_file_is_missing(
+        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Raise file-not-found when configured artifact is absent."""
+        monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
+        monkeypatch.setenv("MODEL_TYPE", "tensorflow")
+        monkeypatch.setenv("MODEL_FILENAME", "missing.keras")
+        with pytest.raises(FileNotFoundError, match="TensorFlow model not found"):
+            TensorflowAdapter(Settings())

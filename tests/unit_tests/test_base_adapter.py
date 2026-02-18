@@ -247,3 +247,87 @@ class TestBaseAdapter:
             match="Set MODEL_TYPE=onnx\\|sklearn\\|pytorch\\|tensorflow",
         ):
             load_adapter(settings)
+
+    def test_load_adapter_detects_pytorch_by_filename(
+        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Auto-detect pytorch adapter from MODEL_FILENAME extension."""
+        model_path = tmp_path / "custom_model.pt"
+        model_path.write_bytes(b"x")
+
+        class FakePytorch:
+            def __init__(self: Self, settings: object) -> None:
+                self.settings = settings
+
+        import pytorch_adapter as pytorch_mod
+
+        monkeypatch.setattr(pytorch_mod, "PytorchAdapter", FakePytorch)
+        monkeypatch.setenv("MODEL_TYPE", "")
+        monkeypatch.setenv("MODEL_FILENAME", "custom_model.pt")
+        monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
+        out = load_adapter(Settings())
+        assert isinstance(out, FakePytorch)
+        assert os.path.exists(model_path)
+
+    def test_load_adapter_detects_tensorflow_by_filename(
+        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Auto-detect tensorflow adapter from MODEL_FILENAME extension."""
+        model_path = tmp_path / "custom_model.keras"
+        model_path.write_bytes(b"x")
+
+        class FakeTensorflow:
+            def __init__(self: Self, settings: object) -> None:
+                self.settings = settings
+
+        import tensorflow_adapter as tensorflow_mod
+
+        monkeypatch.setattr(tensorflow_mod, "TensorflowAdapter", FakeTensorflow)
+        monkeypatch.setenv("MODEL_TYPE", "")
+        monkeypatch.setenv("MODEL_FILENAME", "custom_model.keras")
+        monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
+        out = load_adapter(Settings())
+        assert isinstance(out, FakeTensorflow)
+        assert os.path.exists(model_path)
+
+    def test_load_adapter_detects_tensorflow_saved_model_dir(
+        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Auto-detect tensorflow adapter from SavedModel folder."""
+        saved_model_dir = tmp_path / "saved_model"
+        saved_model_dir.mkdir(parents=True, exist_ok=True)
+        (saved_model_dir / "saved_model.pb").write_bytes(b"x")
+
+        class FakeTensorflow:
+            def __init__(self: Self, settings: object) -> None:
+                self.settings = settings
+
+        import tensorflow_adapter as tensorflow_mod
+
+        monkeypatch.setattr(tensorflow_mod, "TensorflowAdapter", FakeTensorflow)
+        monkeypatch.setenv("MODEL_TYPE", "")
+        monkeypatch.setenv("MODEL_FILENAME", "saved_model")
+        monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
+        out = load_adapter(Settings())
+        assert isinstance(out, FakeTensorflow)
+
+    def test_load_adapter_uses_default_pytorch_model(
+        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Auto-detect default ``model.pt`` when MODEL_FILENAME is empty."""
+        model_path = tmp_path / "model.pt"
+        model_path.write_bytes(b"x")
+
+        class FakePytorch:
+            def __init__(self: Self, settings: object) -> None:
+                self.settings = settings
+
+        import pytorch_adapter as pytorch_mod
+
+        monkeypatch.setattr(pytorch_mod, "PytorchAdapter", FakePytorch)
+        monkeypatch.setenv("MODEL_TYPE", "")
+        monkeypatch.setenv("MODEL_FILENAME", "")
+        monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
+        out = load_adapter(Settings())
+        assert isinstance(out, FakePytorch)
+        assert os.path.exists(model_path)
