@@ -48,6 +48,12 @@ coverage.xml
 coverage-*.xml
 htmlcov/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.tox/
+.nox/
+**/__pycache__/
 
 # Jupyter Notebook
 .ipynb_checkpoints
