@@ -39,6 +39,12 @@ jobs:
           set -euo pipefail
           uv sync --frozen --extra dev --extra grpc
 
+      - name: Generate and verify gRPC stubs
+        run: |
+          set -euo pipefail
+          ./scripts/generate_grpc_stubs.sh
+          ./scripts/check_grpc_stubs.sh
+
       - name: Run gRPC property parity tests
         env:
           HYPOTHESIS_MAX_EXAMPLES: "40"
@@ -74,6 +80,12 @@ jobs:
         run: |
           set -euo pipefail
           uv sync --frozen --extra dev --extra grpc
+
+      - name: Generate and verify gRPC stubs
+        run: |
+          set -euo pipefail
+          ./scripts/generate_grpc_stubs.sh
+          ./scripts/check_grpc_stubs.sh
 
       - name: Run gRPC property parity tests
         env:

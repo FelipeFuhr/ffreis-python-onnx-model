@@ -14,6 +14,7 @@ WORKDIR /app
 COPY --from=uv /uv /usr/local/bin/uv
 
 COPY pyproject.toml uv.lock main.py /app/
+COPY docs /app/docs
 COPY proto /app/proto
 COPY scripts /app/scripts
 COPY src /app/src
