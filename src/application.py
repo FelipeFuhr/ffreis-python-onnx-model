@@ -19,7 +19,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from base_adapter import BaseAdapter, load_adapter
 from config import Settings
 from input_output import format_output, parse_payload
-from openapi_contract import load_openapi_contract
 from parsed_types import ParsedInput
 from parsed_types import batch_size as _batch_size
 from telemetry import (
@@ -28,10 +27,9 @@ from telemetry import (
     instrument_fastapi_application,
     setup_telemetry,
 )
-from value_types import JsonDict, PredictionValue, SpanAttributeValue
+from value_types import PredictionValue, SpanAttributeValue
 
 log = logging_getLogger("byoc")
-_OPENAPI_ATTR = "openapi"
 _OPENAPI_CONTRACT_FILE = Path(__file__).resolve().parents[1] / "docs" / "openapi.yaml"
 _SWAGGER_UI_HTML = """<!doctype html>
 <html>
@@ -145,23 +143,7 @@ class InferenceApplicationBuilder:
         self._configure_metrics()
         self._register_body_limit_middleware()
         self._register_routes()
-        self._bind_openapi_contract()
         return self.application
-
-    def _bind_openapi_contract(self: InferenceApplicationBuilder) -> None:
-        """Serve checked-in OpenAPI contract when available.
-
-        Falls back to FastAPI's generated schema when contract file is missing.
-        """
-        generated_openapi = self.application.openapi
-
-        def _openapi() -> JsonDict:
-            contract = load_openapi_contract()
-            if contract is not None:
-                return contract
-            return cast(JsonDict, generated_openapi())
-
-        setattr(self.application, _OPENAPI_ATTR, _openapi)
 
     def _configure_telemetry(self: InferenceApplicationBuilder) -> None:
         """Enable application telemetry when configured."""
