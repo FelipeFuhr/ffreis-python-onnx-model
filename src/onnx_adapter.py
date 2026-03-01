@@ -135,6 +135,8 @@ class OnnxAdapter(BaseAdapter):
         PredictionValue
             Prediction output represented as JSON-serializable structures.
         """
+        if not isinstance(parsed_input, ParsedInput):
+            raise TypeError("ONNX adapter expects ParsedInput")
         feed = self._build_feed(parsed_input)
         if self._output_map:
             return self._predict_with_output_map(feed)

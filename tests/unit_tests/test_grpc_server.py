@@ -258,7 +258,7 @@ def test_create_server_registers_service(monkeypatch: pytest_MonkeyPatch) -> Non
         Settings(),
         host="127.0.0.1",
         port=50052,
-        max_workers=2,
+        max_concurrent_rpcs=2,
     )
     assert created is fake_server
     assert calls["address"] == "127.0.0.1:50052"
@@ -285,7 +285,7 @@ def test_main_starts_server(monkeypatch: pytest_MonkeyPatch) -> None:
         lambda self: module.argparse.Namespace(
             host="0.0.0.0",
             port=50052,
-            max_workers=8,
+            max_concurrent_rpcs=8,
         ),
     )
     module.main()

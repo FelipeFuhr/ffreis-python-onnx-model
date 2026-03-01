@@ -214,9 +214,9 @@ class InferenceGrpcService:
         except ValueError as exc:
             _set_grpc_error(context, grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             return _predict_reply()
-        except Exception as exc:  # pragma: no cover - unexpected adapter/runtime errors
+        except Exception:  # pragma: no cover - unexpected adapter/runtime errors
             log.exception("Predict RPC failed")
-            _set_grpc_error(context, grpc.StatusCode.INTERNAL, str(exc))
+            _set_grpc_error(context, grpc.StatusCode.INTERNAL, "internal_server_error")
             return _predict_reply()
 
     async def Live(
@@ -249,7 +249,7 @@ def create_server(
     *,
     host: str,
     port: int,
-    max_workers: int = 16,
+    max_concurrent_rpcs: int = 16,
 ) -> grpc_aio.Server:
     """Create configured gRPC server instance.
 
@@ -261,15 +261,15 @@ def create_server(
         Bind host.
     port : int
         Bind TCP port.
-    max_workers : int, default=16
-        Maximum concurrent RPCs.
+    max_concurrent_rpcs : int, default=16
+        Maximum number of concurrent RPCs the server will accept.
 
     Returns
     -------
     grpc.aio.Server
         Configured server.
     """
-    server = grpc_aio.server(maximum_concurrent_rpcs=max_workers)
+    server = grpc_aio.server(maximum_concurrent_rpcs=max_concurrent_rpcs)
     grpc_stubs = _require_grpc_stubs_module()
     grpc_stubs.add_InferenceServiceServicer_to_server(
         InferenceGrpcService(settings),
@@ -284,14 +284,14 @@ async def _serve(
     settings: Settings,
     host: str,
     port: int,
-    max_workers: int,
+    max_concurrent_rpcs: int,
 ) -> None:
     """Start async gRPC server and block until termination."""
     server = create_server(
         settings,
         host=host,
         port=port,
-        max_workers=max_workers,
+        max_concurrent_rpcs=max_concurrent_rpcs,
     )
     await server.start()
     log.info("gRPC inference server listening on %s:%s", host, port)
@@ -309,7 +309,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="ONNX model serving gRPC endpoint.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=50052)
-    parser.add_argument("--max-workers", type=int, default=16)
+    parser.add_argument("--max-concurrent-rpcs", type=int, default=16)
     args = parser.parse_args()
 
     asyncio_run(
@@ -317,7 +317,7 @@ def main() -> None:
             settings=settings,
             host=cast(str, args.host),
             port=cast(int, args.port),
-            max_workers=cast(int, args.max_workers),
+            max_concurrent_rpcs=cast(int, args.max_concurrent_rpcs),
         )
     )
 
