@@ -8,7 +8,7 @@ on:
       - "tests/**"
       - "main.py"
       - "pyproject.toml"
-      - "requirements.txt"
+      - "uv.lock"
       - "Makefile"
       - ".github/workflows/build-all.yml"
   push:
@@ -18,7 +18,7 @@ on:
       - "tests/**"
       - "main.py"
       - "pyproject.toml"
-      - "requirements.txt"
+      - "uv.lock"
       - "Makefile"
       - ".github/workflows/build-all.yml"
 

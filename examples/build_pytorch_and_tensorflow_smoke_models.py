@@ -8,11 +8,24 @@ from typing import Self
 
 from numpy import float32 as np_float32
 from numpy import ones as np_ones
-from tensorflow import keras as tf_keras
-from torch import Tensor as torch_Tensor
-from torch import jit as torch_jit
-from torch import nn as torch_nn
-from torch import no_grad as torch_no_grad
+
+try:
+    from tensorflow import keras as tf_keras
+except ModuleNotFoundError as exc:
+    raise RuntimeError(
+        "TensorFlow is required for this example. Install with: "
+        "uv sync --extra tensorflow"
+    ) from exc
+
+try:
+    from torch import Tensor as torch_Tensor
+    from torch import jit as torch_jit
+    from torch import nn as torch_nn
+    from torch import no_grad as torch_no_grad
+except ModuleNotFoundError as exc:
+    raise RuntimeError(
+        "PyTorch is required for this example. Install with: uv sync --extra torch"
+    ) from exc
 
 
 def _build_pytorch_model(path: Path) -> None:

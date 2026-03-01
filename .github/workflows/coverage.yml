@@ -8,7 +8,7 @@ on:
       - "tests/**"
       - "main.py"
       - "pyproject.toml"
-      - "requirements.txt"
+      - "uv.lock"
       - "Makefile"
       - ".github/workflows/coverage.yml"
   push:
@@ -18,7 +18,7 @@ on:
       - "tests/**"
       - "main.py"
       - "pyproject.toml"
-      - "requirements.txt"
+      - "uv.lock"
       - "Makefile"
       - ".github/workflows/coverage.yml"
 
@@ -46,9 +46,9 @@ jobs:
       - name: Generate coverage
         run: |
           set -euo pipefail
-          uv sync --extra dev --extra grpc
+          uv sync --frozen --extra dev --extra grpc
           ./scripts/generate_grpc_stubs.sh
-          uv run pytest -q --cov=src --cov-report=term --cov-report=xml:coverage.xml
+          uv run --frozen pytest -q --cov=src --cov-report=term --cov-report=xml:coverage.xml
           test -s coverage.xml
 
       - name: Upload coverage to Codecov

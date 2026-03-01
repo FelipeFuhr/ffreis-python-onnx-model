@@ -23,16 +23,19 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install deps (dev)
+      - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b
+        with:
+          enable-cache: true
+
+      - name: Install deps (dev, frozen)
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          uv sync --frozen --extra dev
 
       - name: Run integration tests
         run: |
           set -euo pipefail
-          python -m pytest -q tests/integration_tests \
+          uv run --frozen python -m pytest -q tests/integration_tests \
             --cov=src \
             --cov-report=xml:coverage-integration.xml \
             --cov-report=term \

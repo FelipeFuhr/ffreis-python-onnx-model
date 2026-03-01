@@ -16,23 +16,30 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install uv
-        run: pip install uv
+      - name: Set up uv
+        uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b
+        with:
+          enable-cache: true
+
+      - name: Install examples dependencies (frozen)
+        run: |
+          set -euo pipefail
+          uv sync --frozen --extra examples
 
       - name: Run logistic regression example
         run: |
           set -euo pipefail
-          uv run --extra examples python -m examples.train_and_serve_logistic_regression
+          uv run --frozen python -m examples.train_and_serve_logistic_regression
 
       - name: Run random forest example
         run: |
           set -euo pipefail
-          uv run --extra examples python -m examples.train_and_serve_random_forest
+          uv run --frozen python -m examples.train_and_serve_random_forest
 
       - name: Run neural network example
         run: |
           set -euo pipefail
-          uv run --extra examples python -m examples.train_and_serve_neural_network
+          uv run --frozen python -m examples.train_and_serve_neural_network
 
   build-example-containers:
     runs-on: ubuntu-latest

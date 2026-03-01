@@ -26,7 +26,7 @@ jobs:
       - name: Install dependencies (uv)
         run: |
           set -euo pipefail
-          uv sync --extra dev --extra grpc
+          uv sync --frozen --extra dev --extra grpc
 
       - name: Check generated gRPC stubs are current
         run: |
@@ -36,4 +36,4 @@ jobs:
       - name: Run gRPC/API parity test
         run: |
           set -euo pipefail
-          uv run pytest -q tests/integration_tests/test_grpc_parity.py
+          uv run --frozen pytest -q tests/integration_tests/test_grpc_parity.py

@@ -9,7 +9,7 @@ on:
       - "tests/**"
       - "main.py"
       - "pyproject.toml"
-      - "requirements.txt"
+      - "uv.lock"
       - "sonar-project.properties"
       - ".github/workflows/code-quality.yml"
   push:
@@ -19,7 +19,7 @@ on:
       - "tests/**"
       - "main.py"
       - "pyproject.toml"
-      - "requirements.txt"
+      - "uv.lock"
       - "sonar-project.properties"
       - ".github/workflows/code-quality.yml"
 
@@ -39,17 +39,20 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
+      - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (frozen)
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+          uv sync --frozen --extra dev
 
       - name: Generate coverage for Sonar
 
         run: |
           set -euo pipefail
-          python -m pytest \
+          uv run --frozen python -m pytest \
             tests/unit_tests \
             --cov=src \
             --cov-report=xml:coverage.xml \
@@ -64,6 +67,7 @@ jobs:
           echo "SONAR_ORGANIZATION=${{ vars.SONAR_ORGANIZATION || 'felipefuhr' }}" >> "$GITHUB_ENV"
 
       - name: SonarQube Scan
+        if: ${{ secrets.SONAR_TOKEN != '' }}
         uses: SonarSource/sonarqube-scan-action@a31c9398be7ace6bbfaf30c0bd5d415f843d45e9
         with:
           args: >
@@ -77,3 +81,7 @@ jobs:
         env:
           SONAR_HOST_URL: https://sonarcloud.io
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+      - name: Sonar token not configured
+        if: ${{ secrets.SONAR_TOKEN == '' }}
+        run: echo "SONAR_TOKEN is not set. Skipping Sonar scan."

@@ -7,6 +7,7 @@ on:
     paths:
       - "tests/integration_tests/test_grpc_parity.py"
       - "pyproject.toml"
+      - "uv.lock"
       - "Makefile"
       - ".github/workflows/hypothesis-integration.yml"
   schedule:
@@ -29,18 +30,21 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install deps (dev + grpc)
+      - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b
+        with:
+          enable-cache: true
+
+      - name: Install deps (dev + grpc, frozen)
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,grpc]"
+          uv sync --frozen --extra dev --extra grpc
 
       - name: Run gRPC property parity tests
         env:
           HYPOTHESIS_MAX_EXAMPLES: "40"
         run: |
           set -euo pipefail
-          python -m pytest -q tests/integration_tests/test_grpc_parity.py -m property
+          uv run --frozen python -m pytest -q tests/integration_tests/test_grpc_parity.py -m property
 
       - name: Upload Hypothesis examples
         if: always()
@@ -62,18 +66,21 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install deps (dev + grpc)
+      - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b
+        with:
+          enable-cache: true
+
+      - name: Install deps (dev + grpc, frozen)
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev,grpc]"
+          uv sync --frozen --extra dev --extra grpc
 
       - name: Run gRPC property parity tests
         env:
           HYPOTHESIS_MAX_EXAMPLES: "180"
         run: |
           set -euo pipefail
-          python -m pytest -q tests/integration_tests/test_grpc_parity.py -m property
+          uv run --frozen python -m pytest -q tests/integration_tests/test_grpc_parity.py -m property
 
       - name: Upload Hypothesis examples
         if: always()
