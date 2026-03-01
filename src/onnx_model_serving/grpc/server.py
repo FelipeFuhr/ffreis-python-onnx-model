@@ -136,6 +136,12 @@ def _set_grpc_error(
 class InferenceGrpcService:
     """gRPC inference service implementation."""
 
+    _RPC_METHOD_ALIASES: dict[str, str] = {
+        "Live": "live",
+        "Ready": "ready",
+        "Predict": "predict",
+    }
+
     def __init__(self: InferenceGrpcService, settings: Settings) -> None:
         """Initialize service and eagerly load model adapter.
 
@@ -219,29 +225,12 @@ class InferenceGrpcService:
             _set_grpc_error(context, grpc.StatusCode.INTERNAL, "internal_server_error")
             return _predict_reply()
 
-    async def Live(
-        self: InferenceGrpcService,
-        request: _HealthRequestLike,
-        context: grpc.ServicerContext | grpc_aio.ServicerContext,
-    ) -> _StatusReplyLike:
-        """PascalCase entrypoint used by generated gRPC service wiring."""
-        return await self.live(request, context)
-
-    async def Ready(
-        self: InferenceGrpcService,
-        request: _HealthRequestLike,
-        context: grpc.ServicerContext | grpc_aio.ServicerContext,
-    ) -> _StatusReplyLike:
-        """PascalCase entrypoint used by generated gRPC service wiring."""
-        return await self.ready(request, context)
-
-    async def Predict(
-        self: InferenceGrpcService,
-        request: _PredictRequestLike,
-        context: grpc.ServicerContext | grpc_aio.ServicerContext | None,
-    ) -> _PredictReplyLike:
-        """PascalCase entrypoint used by generated gRPC service wiring."""
-        return await self.predict(request, context)
+    def __getattr__(self: InferenceGrpcService, name: str) -> object:
+        """Expose gRPC PascalCase RPC handlers via lowercase implementations."""
+        target = self._RPC_METHOD_ALIASES.get(name)
+        if target is None:
+            raise AttributeError(name)
+        return getattr(self, target)
 
 
 def create_server(
