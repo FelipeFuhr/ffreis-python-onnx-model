@@ -55,9 +55,17 @@ jobs:
           CONTAINER_COMMAND=podman make build
 
       - name: Install Trivy
-        uses: aquasecurity/setup-trivy@v0.2.4
-        with:
-          version: v0.67.2
+        run: |
+          set -euo pipefail
+          TRIVY_VERSION="0.67.2"
+          curl -sfL \
+            --proto '=https' \
+            --proto-redir '=https' \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+            -o /tmp/trivy.tar.gz
+          tar -xzf /tmp/trivy.tar.gz -C /tmp trivy
+          sudo install -m 0755 /tmp/trivy /usr/local/bin/trivy
+          trivy --version
 
       - name: Scan images (sequential, Podman)
         run: |
