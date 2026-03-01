@@ -57,7 +57,7 @@ jobs:
   grpc-property-parity-nightly:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    if: ${{ github.event_name != 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' }}
 
     steps:
       - uses: actions/checkout@v6

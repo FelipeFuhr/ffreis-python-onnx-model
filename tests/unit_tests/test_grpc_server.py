@@ -221,7 +221,7 @@ def test_predict_maps_unexpected_error_to_internal(
     reply = asyncio_run(service.Predict(request, context))
 
     assert context.code == grpc_StatusCode.INTERNAL
-    assert context.details == "explode"
+    assert context.details == "internal_server_error"
     assert reply.body == b""
 
 
