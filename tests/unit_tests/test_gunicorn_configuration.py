@@ -1,14 +1,15 @@
 """Tests for gunicorn configuration."""
 
-import importlib
+from importlib import reload as importlib_reload
 
-import pytest
+from pytest import MonkeyPatch as pytest_MonkeyPatch
+from pytest import mark as pytest_mark
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest_mark.unit
 
 
 def test_gunicorn_configuration_uses_settings_from_env(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Verify gunicorn configuration uses settings from env.
 
@@ -31,7 +32,7 @@ def test_gunicorn_configuration_uses_settings_from_env(
 
     import gunicorn_configuration as gunicorn_configuration
 
-    gunicorn_settings_module = importlib.reload(gunicorn_configuration)
+    gunicorn_settings_module = importlib_reload(gunicorn_configuration)
     assert gunicorn_settings_module.bind == "0.0.0.0:9999"
     assert gunicorn_settings_module.workers == 3
     assert gunicorn_settings_module.threads == 9

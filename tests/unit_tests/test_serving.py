@@ -1,11 +1,13 @@
 """Tests for serving."""
 
-import pytest
+from pytest import MonkeyPatch as pytest_MonkeyPatch
+from pytest import mark as pytest_mark
+from pytest import raises as pytest_raises
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest_mark.unit
 
 
-def test_main_execs_gunicorn(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_execs_gunicorn(monkeypatch: pytest_MonkeyPatch) -> None:
     """Verify main execs gunicorn.
 
     Parameters
@@ -18,7 +20,8 @@ def test_main_execs_gunicorn(monkeypatch: pytest.MonkeyPatch) -> None:
     None
         Does not return a value; assertions validate expected behavior.
     """
-    import serving as serving_module
+    from serving import main as serving_module_main
+    from serving import os as serving_module_os
 
     seen = {}
 
@@ -41,9 +44,9 @@ def test_main_execs_gunicorn(monkeypatch: pytest.MonkeyPatch) -> None:
         seen["argv"] = argv
         raise RuntimeError("stop")
 
-    monkeypatch.setattr(serving_module.os, "execvp", fake_execvp)
-    with pytest.raises(RuntimeError, match="stop"):
-        serving_module.main()
+    monkeypatch.setattr(serving_module_os, "execvp", fake_execvp)
+    with pytest_raises(RuntimeError, match="stop"):
+        serving_module_main()
 
     assert seen["cmd"] == "gunicorn"
     assert seen["argv"] == [
@@ -62,6 +65,6 @@ def test_module_exposes_asgi_app() -> None:
     None
         Does not return a value; assertions validate expected behavior.
     """
-    import serving as serving_module
+    from serving import application as serving_module_application
 
-    assert serving_module.application is not None
+    assert serving_module_application is not None

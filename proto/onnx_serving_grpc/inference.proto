@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package onnxserving.grpc;
+
+// gRPC contract for model health checks and inference requests.
+service InferenceService {
+  // Liveness probe.
+  // Returns whether the process is running and able to answer requests.
+  rpc Live(LiveRequest) returns (StatusReply);
+
+  // Readiness probe.
+  // Returns whether the service is ready to serve model inference traffic.
+  rpc Ready(ReadyRequest) returns (StatusReply);
+
+  // Runs model inference for the provided payload.
+  // Request and response payload formats are defined by content-type headers.
+  rpc Predict(PredictRequest) returns (PredictReply);
+}
+
+// Empty request for liveness checks.
+message LiveRequest {}
+
+// Empty request for readiness checks.
+message ReadyRequest {}
+
+// Generic status reply used by health endpoints.
+message StatusReply {
+  // True when the requested health condition is satisfied.
+  bool ok = 1;
+
+  // Human-readable status detail.
+  string status = 2;
+}
+
+// Inference request payload and content negotiation headers.
+message PredictRequest {
+  // Raw inference request body.
+  bytes payload = 1;
+
+  // MIME type of payload (for example: application/json).
+  string content_type = 2;
+
+  // Preferred MIME type for the response body.
+  string accept = 3;
+}
+
+// Inference response body, content type, and extra metadata.
+message PredictReply {
+  // Raw inference response body.
+  bytes body = 1;
+
+  // MIME type of body.
+  string content_type = 2;
+
+  // Additional response metadata.
+  map<string, string> metadata = 3;
+}

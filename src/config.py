@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import os
+from os import getenv as os_getenv
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -22,7 +22,7 @@ def _env_bool(name: str, default: bool) -> bool:
     bool
         Parsed boolean value.
     """
-    value = os.getenv(name)
+    value = os_getenv(name)
     if value is None:
         return default
     return value.strip().lower() in ("1", "true", "yes", "y", "on")
@@ -43,7 +43,7 @@ def _env_int(name: str, default: int) -> int:
     int
         Parsed integer value.
     """
-    value = os.getenv(name)
+    value = os_getenv(name)
     return default if value is None else int(value)
 
 
@@ -62,7 +62,7 @@ def _env_float(name: str, default: float) -> float:
     float
         Parsed float value.
     """
-    value = os.getenv(name)
+    value = os_getenv(name)
     return default if value is None else float(value)
 
 
@@ -81,7 +81,7 @@ def _env_str(name: str, default: str) -> str:
     str
         Parsed string value.
     """
-    value = os.getenv(name)
+    value = os_getenv(name)
     return default if value is None else value
 
 
@@ -190,6 +190,9 @@ class Settings(BaseModel):
     )
     prometheus_path: str = Field(
         default_factory=lambda: _env_str("PROMETHEUS_PATH", "/metrics")
+    )
+    swagger_enabled: bool = Field(
+        default_factory=lambda: _env_bool("SWAGGER_ENABLED", False)
     )
 
     otel_enabled: bool = Field(default_factory=lambda: _env_bool("OTEL_ENABLED", True))

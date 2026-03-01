@@ -8,8 +8,17 @@ A minimal guide to building Python applications with Docker using multi-stage bu
 
 This project demonstrates a **multi-stage Docker build** for Python that:
 
-1. **Stage 1 (Builder)**: Creates an isolated virtual environment, installs dependencies, runs tests, and generates a lock file for reproducibility
+1. **Stage 1 (Builder)**: Creates an isolated virtual environment, installs dependencies from `uv.lock`, and runs tests
 2. **Stage 2 (Runtime)**: Copies only the necessary application files plus the built virtual environment to a minimal image
+
+## API Contract
+
+- OpenAPI transport contract: `docs/openapi.yaml`
+- gRPC contract: `proto/onnx_serving_grpc/inference.proto`
+  - Server reflection is intentionally not enabled in runtime paths.
+
+OpenAPI documents transport behavior (paths, media types, headers, and response envelopes).
+Model-specific tensor semantics are expected to be defined by a model manifest shipped with artifacts.
 
 ## Quick Start
 
@@ -39,13 +48,14 @@ This project uses an **incremental multi-image approach** optimized for Python d
 
 1. **Base (`ffreis/base`)**: Lightweight Ubuntu 26.04 base image with unprivileged user
 2. **Base Builder (`ffreis/base-builder`)**: Adds Python and virtualenv tooling to the base
-3. **Builder (`ffreis/builder`)**: Builds `/opt/venv`, runs tests, generates requirements.lock for reproducibility
-4. **Base Runner (`ffreis/base-runner`)**: Minimal runtime base with entrypoint script
-5. **Runner (`ffreis/runner`)**: Contains application code, Python runtime, and copied `/opt/venv`
+3. **UV Venv (`ffreis/uv-venv`)**: Builds shared `/opt/venv` from `uv.lock`
+4. **Builder (`ffreis/builder`)**: Reuses `/opt/venv` and runs tests
+5. **Base Runner (`ffreis/base-runner`)**: Minimal runtime base with entrypoint script
+6. **Runner (`ffreis/runner`)**: Contains application code, Python runtime, and copied `/opt/venv`
 
 **Benefits:**
 
-- **Reproducible builds**: Lock file (`requirements.lock`) generated during build ensures consistent dependencies
+- **Reproducible builds**: `uv.lock` ensures consistent dependencies across environments
 - **Testing in build**: Tests run during the build process - build fails if tests fail
 - **Layer caching**: Rebuild only changed layers; base images rarely change
 - **Minimal final images**: Runtime excludes build tools, tests, and unnecessary files
@@ -59,7 +69,8 @@ This project uses an **incremental multi-image approach** optimized for Python d
 ```bash
 make build-base              # Build base Ubuntu image
 make build-base-builder      # Build base image with Python
-make build-builder           # Build builder (installs deps, runs tests, creates lock file)
+make build-uv-venv           # Build shared uv-based virtual environment image
+make build-builder           # Build builder (reuses uv-venv and runs tests)
 make build-base-runner       # Build minimal runner base
 make build-runner            # Build final runner image
 make build-images            # Build all images at once
@@ -99,7 +110,7 @@ make clean-all               # Remove all images
 .
 ├── main.py                 # Application entry point
 ├── pyproject.toml          # Python project configuration & dependencies
-├── requirements.txt        # Optional pinned dependencies
+├── uv.lock                 # Locked dependency graph used by uv
 ├── src/
 │   └── onnx_model_serving/
 │       ├── __init__.py
@@ -112,7 +123,8 @@ make clean-all               # Remove all images
 │   ├── digests.env       # Base image digest pinning
 │   ├── Dockerfile.base
 │   ├── Dockerfile.base-builder
-│   ├── Dockerfile.builder  # Installs deps, runs tests, creates lock
+│   ├── Dockerfile.uv-builder # Builds /opt/venv from uv.lock
+│   ├── Dockerfile.builder  # Installs deps from uv.lock and runs tests
 │   ├── Dockerfile.base-runner
 │   └── Dockerfile.runner
 ├── scripts/              # Helper scripts
@@ -145,7 +157,7 @@ make clean-all               # Remove all images
    - `make run`
 3. **Build images**: Run `make build-images` to build and test in containers
 4. **Tests run automatically**: Builder stage runs `pytest` - build fails if tests fail
-5. **Lock file generated**: `requirements.lock` is created for reproducible deployments
+5. **Locked install enforced**: `uv.lock` is used with `--frozen` for reproducible deployments
 6. **Deploy**: Use `ffreis/runner` image in production - it's minimal and secure
 
 ## Testing
@@ -182,6 +194,52 @@ Each script performs a local demonstration flow:
 
 The core serving package remains inference-only (`model.onnx` + `/invocations`).
 
+## Optional Native Framework Inference
+
+The API can also serve non-ONNX model artifacts on Python as optional paths.
+
+Install optional dependencies:
+
+```bash
+uv sync --extra sklearn
+uv sync --extra torch
+uv sync --extra tensorflow
+```
+
+Run with sklearn model artifact:
+
+```bash
+export SM_MODEL_DIR=/path/to/model-dir
+export MODEL_TYPE=sklearn
+export MODEL_FILENAME=model.joblib
+uv run --extra sklearn python -m uvicorn serving:application --host 0.0.0.0 --port 8080
+```
+
+Run with PyTorch model artifact:
+
+```bash
+export SM_MODEL_DIR=/path/to/model-dir
+export MODEL_TYPE=pytorch
+export MODEL_FILENAME=model.pt
+uv run --extra torch python -m uvicorn serving:application --host 0.0.0.0 --port 8080
+```
+
+Run with TensorFlow model artifact:
+
+```bash
+export SM_MODEL_DIR=/path/to/model-dir
+export MODEL_TYPE=tensorflow
+export MODEL_FILENAME=model.keras
+uv run --extra tensorflow python -m uvicorn serving:application --host 0.0.0.0 --port 8080
+```
+
+Notes:
+
+- `MODEL_TYPE=onnx` remains the default production path.
+- `MODEL_TYPE=sklearn` requires `scikit-learn` (and `joblib`).
+- `MODEL_TYPE=pytorch` requires `torch`.
+- `MODEL_TYPE=tensorflow` requires `tensorflow`.
+
 Run them locally with `uv`:
 
 ```bash
@@ -194,7 +252,7 @@ uv run --extra examples python -m examples.train_and_serve_neural_network
 
 ### Example Containers
 
-Dedicated example Dockerfiles are available in `container/`:
+Dedicated example Dockerfiles are available in `container/examples/`:
 
 - `Dockerfile.example-base`
 - `Dockerfile.example-logistic-regression`
@@ -204,8 +262,8 @@ Dedicated example Dockerfiles are available in `container/`:
 Build and run:
 
 ```bash
-docker build -f container/Dockerfile.example-base -t example-base .
-docker build -f container/Dockerfile.example-neural-network -t example-neural-network .
+docker build -f container/examples/Dockerfile.example-base -t example-base .
+docker build -f container/examples/Dockerfile.example-neural-network -t example-neural-network .
 docker run --rm example-neural-network
 ```
 

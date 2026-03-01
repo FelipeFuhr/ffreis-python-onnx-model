@@ -1,9 +1,10 @@
 """Test module."""
 
-import types
+from types import SimpleNamespace as types_SimpleNamespace
 from typing import Self
 
-import pytest
+from pytest import MonkeyPatch as pytest_MonkeyPatch
+from pytest import mark as pytest_mark
 
 from config import Settings
 from telemetry import (
@@ -14,7 +15,7 @@ from telemetry import (
     setup_telemetry,
 )
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest_mark.unit
 
 
 class _Recorder:
@@ -52,7 +53,7 @@ def test_parse_headers_handles_empty_and_pairs() -> None:
 
 
 def test_setup_telemetry_returns_false_when_disabled(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate setup telemetry returns false when disabled.
 
@@ -71,7 +72,7 @@ def test_setup_telemetry_returns_false_when_disabled(
 
 
 def test_setup_telemetry_returns_false_when_dependencies_missing(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate setup telemetry returns false when dependencies missing.
 
@@ -94,7 +95,7 @@ def test_setup_telemetry_returns_false_when_dependencies_missing(
 
 
 def test_setup_telemetry_returns_false_without_endpoint(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate setup telemetry returns false without endpoint.
 
@@ -115,12 +116,12 @@ def test_setup_telemetry_returns_false_without_endpoint(
     monkeypatch.setattr(
         telemetry_module,
         "trace",
-        types.SimpleNamespace(set_tracer_provider=lambda p: None),
+        types_SimpleNamespace(set_tracer_provider=lambda p: None),
     )
     assert setup_telemetry(Settings()) is False
 
 
-def test_setup_telemetry_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_setup_telemetry_happy_path(monkeypatch: pytest_MonkeyPatch) -> None:
     """Validate setup telemetry happy path.
 
     Parameters
@@ -207,7 +208,7 @@ def test_setup_telemetry_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         telemetry_module,
         "trace",
-        types.SimpleNamespace(
+        types_SimpleNamespace(
             set_tracer_provider=lambda provider: trace_rec.add(provider=provider)
         ),
     )
@@ -218,17 +219,17 @@ def test_setup_telemetry_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         telemetry_module,
         "RequestsInstrumentor",
-        lambda: types.SimpleNamespace(instrument=lambda: req_rec.add()),
+        lambda: types_SimpleNamespace(instrument=lambda: req_rec.add()),
     )
     monkeypatch.setattr(
         telemetry_module,
         "HTTPXClientInstrumentor",
-        lambda: types.SimpleNamespace(instrument=lambda: httpx_rec.add()),
+        lambda: types_SimpleNamespace(instrument=lambda: httpx_rec.add()),
     )
     monkeypatch.setattr(
         telemetry_module,
         "LoggingInstrumentor",
-        lambda: types.SimpleNamespace(
+        lambda: types_SimpleNamespace(
             instrument=lambda set_logging_format: log_rec.add(
                 set_logging_format=set_logging_format
             )
@@ -245,7 +246,7 @@ def test_setup_telemetry_happy_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert log_rec.calls
 
 
-def test_instrument_fastapi_when_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_instrument_fastapi_when_enabled(monkeypatch: pytest_MonkeyPatch) -> None:
     """Validate instrument fastapi when enabled.
 
     Parameters
@@ -265,7 +266,7 @@ def test_instrument_fastapi_when_enabled(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr(
         telemetry_module,
         "FastAPIInstrumentor",
-        types.SimpleNamespace(
+        types_SimpleNamespace(
             instrument_app=lambda application: rec.add(application=application)
         ),
     )
@@ -274,7 +275,7 @@ def test_instrument_fastapi_when_enabled(monkeypatch: pytest.MonkeyPatch) -> Non
     assert rec.calls
 
 
-def test_instrument_fastapi_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_instrument_fastapi_noop_when_disabled(monkeypatch: pytest_MonkeyPatch) -> None:
     """Validate instrument fastapi noop when disabled.
 
     Parameters
@@ -294,7 +295,7 @@ def test_instrument_fastapi_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(
         telemetry_module,
         "FastAPIInstrumentor",
-        types.SimpleNamespace(
+        types_SimpleNamespace(
             instrument_app=lambda application: rec.add(application=application)
         ),
     )
@@ -303,7 +304,7 @@ def test_instrument_fastapi_noop_when_disabled(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_get_current_trace_identifiers_returns_empty_without_trace(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate current trace identifiers are empty without trace module."""
     import telemetry as telemetry_module
@@ -313,21 +314,21 @@ def test_get_current_trace_identifiers_returns_empty_without_trace(
 
 
 def test_get_current_trace_identifiers_returns_ids(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate current trace identifiers are rendered as lowercase hex."""
     import telemetry as telemetry_module
 
-    span_context = types.SimpleNamespace(
+    span_context = types_SimpleNamespace(
         trace_id=0x1234,
         span_id=0xABCD,
         is_valid=True,
     )
-    fake_span = types.SimpleNamespace(get_span_context=lambda: span_context)
+    fake_span = types_SimpleNamespace(get_span_context=lambda: span_context)
     monkeypatch.setattr(
         telemetry_module,
         "trace",
-        types.SimpleNamespace(get_current_span=lambda: fake_span),
+        types_SimpleNamespace(get_current_span=lambda: fake_span),
     )
 
     assert get_current_trace_identifiers() == {
@@ -337,7 +338,7 @@ def test_get_current_trace_identifiers_returns_ids(
 
 
 def test_inject_current_trace_context_uses_propagator(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate active trace context injection populates provided carrier."""
     import telemetry as telemetry_module
@@ -348,7 +349,7 @@ def test_inject_current_trace_context_uses_propagator(
     monkeypatch.setattr(
         telemetry_module,
         "propagate",
-        types.SimpleNamespace(inject=_inject),
+        types_SimpleNamespace(inject=_inject),
     )
 
     carrier: dict[str, str] = {}
@@ -356,7 +357,7 @@ def test_inject_current_trace_context_uses_propagator(
 
 
 def test_setup_telemetry_happy_path_without_httpx_instrumentor(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate setup succeeds when HTTPX instrumentation is unavailable."""
     monkeypatch.setenv("OTEL_ENABLED", "true")
@@ -366,17 +367,17 @@ def test_setup_telemetry_happy_path_without_httpx_instrumentor(
     monkeypatch.setattr(
         telemetry_module,
         "trace",
-        types.SimpleNamespace(set_tracer_provider=lambda provider: None),
+        types_SimpleNamespace(set_tracer_provider=lambda provider: None),
     )
     monkeypatch.setattr(
         telemetry_module,
         "Resource",
-        types.SimpleNamespace(create=lambda payload: {"resource": payload}),
+        types_SimpleNamespace(create=lambda payload: {"resource": payload}),
     )
     monkeypatch.setattr(
         telemetry_module,
         "TracerProvider",
-        lambda *, resource: types.SimpleNamespace(add_span_processor=lambda p: None),
+        lambda *, resource: types_SimpleNamespace(add_span_processor=lambda p: None),
     )
     monkeypatch.setattr(
         telemetry_module,
@@ -391,36 +392,36 @@ def test_setup_telemetry_happy_path_without_httpx_instrumentor(
     monkeypatch.setattr(
         telemetry_module,
         "RequestsInstrumentor",
-        lambda: types.SimpleNamespace(instrument=lambda: None),
+        lambda: types_SimpleNamespace(instrument=lambda: None),
     )
     monkeypatch.setattr(telemetry_module, "HTTPXClientInstrumentor", None)
     monkeypatch.setattr(
         telemetry_module,
         "LoggingInstrumentor",
-        lambda: types.SimpleNamespace(instrument=lambda set_logging_format: None),
+        lambda: types_SimpleNamespace(instrument=lambda set_logging_format: None),
     )
 
     assert setup_telemetry(Settings()) is True
 
 
 def test_get_current_trace_identifiers_returns_empty_for_invalid_context(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate invalid span contexts produce empty identifier mapping."""
     import telemetry as telemetry_module
 
-    span_context = types.SimpleNamespace(trace_id=1, span_id=2, is_valid=False)
-    fake_span = types.SimpleNamespace(get_span_context=lambda: span_context)
+    span_context = types_SimpleNamespace(trace_id=1, span_id=2, is_valid=False)
+    fake_span = types_SimpleNamespace(get_span_context=lambda: span_context)
     monkeypatch.setattr(
         telemetry_module,
         "trace",
-        types.SimpleNamespace(get_current_span=lambda: fake_span),
+        types_SimpleNamespace(get_current_span=lambda: fake_span),
     )
     assert get_current_trace_identifiers() == {}
 
 
 def test_inject_current_trace_context_returns_input_when_propagator_missing(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate context injection is a no-op when propagate is unavailable."""
     import telemetry as telemetry_module
@@ -431,7 +432,7 @@ def test_inject_current_trace_context_returns_input_when_propagator_missing(
 
 
 def test_get_tracer_returns_value_when_trace_module_present(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate get_tracer delegates to trace.get_tracer when available."""
     import telemetry as telemetry_module
@@ -440,13 +441,13 @@ def test_get_tracer_returns_value_when_trace_module_present(
     monkeypatch.setattr(
         telemetry_module,
         "trace",
-        types.SimpleNamespace(get_tracer=lambda name: sentinel),
+        types_SimpleNamespace(get_tracer=lambda name: sentinel),
     )
     assert telemetry_module.get_tracer("any") is sentinel
 
 
 def test_setup_telemetry_returns_false_without_endpoint_when_deps_present(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Validate explicit no-endpoint branch when dependencies are present."""
     monkeypatch.setenv("OTEL_ENABLED", "true")
@@ -456,7 +457,7 @@ def test_setup_telemetry_returns_false_without_endpoint_when_deps_present(
     monkeypatch.setattr(
         telemetry_module,
         "trace",
-        types.SimpleNamespace(set_tracer_provider=lambda provider: None),
+        types_SimpleNamespace(set_tracer_provider=lambda provider: None),
     )
     monkeypatch.setattr(telemetry_module, "Resource", object())
     monkeypatch.setattr(telemetry_module, "TracerProvider", object())

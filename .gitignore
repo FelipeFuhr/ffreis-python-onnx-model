@@ -29,8 +29,11 @@ env/
 
 # uv
 .uv/
-uv.lock
 requirements.lock
+
+# Generated gRPC stubs (generated on demand)
+src/onnx_serving_grpc/*_pb2.py
+src/onnx_serving_grpc/*_pb2_grpc.py
 
 # PyCharm
 .idea/
@@ -45,6 +48,12 @@ coverage.xml
 coverage-*.xml
 htmlcov/
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.tox/
+.nox/
+**/__pycache__/
 
 # Jupyter Notebook
 .ipynb_checkpoints

@@ -2,34 +2,50 @@
 
 from __future__ import annotations
 
-import importlib
-import os
-import socket
-import subprocess
-import sys
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from importlib import import_module as importlib_import_module
+from os import environ as os_environ
+from os import getenv as os_getenv
 from pathlib import Path
+from socket import AF_INET as socket_AF_INET
+from socket import SOCK_STREAM as socket_SOCK_STREAM
+from socket import socket as socket_socket
+from subprocess import PIPE as subprocess_PIPE
+from subprocess import STDOUT as subprocess_STDOUT
+from subprocess import Popen as subprocess_Popen
+from subprocess import TimeoutExpired as subprocess_TimeoutExpired
+from sys import executable as sys_executable
+from sys import path as sys_path
+from time import sleep as time_sleep
 from typing import Protocol, cast
 
-import httpx
-import numpy as np
+from httpx import Client as httpx_Client
+from httpx import HTTPError as httpx_HTTPError
+from numpy import abs as np_abs
+from numpy import array_equal as np_array_equal
+from numpy import asarray as np_asarray
+from numpy import float32 as np_float32
+from numpy import float64 as np_float64
+from numpy import issubdtype as np_issubdtype
+from numpy import max as np_max
+from numpy import ndarray as np_ndarray
+from numpy import number as np_number
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPOSITORY_ROOT / "src"
-if str(SOURCE_ROOT) not in sys.path:
-    sys.path.insert(0, str(SOURCE_ROOT))
+if str(SOURCE_ROOT) not in sys_path:
+    sys_path.insert(0, str(SOURCE_ROOT))
 
 
 class ModelProtocol(Protocol):
     """Protocol for trainable sklearn-like models."""
 
-    def fit(self: ModelProtocol, features: np.ndarray, labels: object) -> object:
+    def fit(self: ModelProtocol, features: np_ndarray, labels: object) -> object:
         """Fit model."""
 
-    def predict(self: ModelProtocol, features: np.ndarray) -> np.ndarray:
+    def predict(self: ModelProtocol, features: np_ndarray) -> np_ndarray:
         """Predict labels."""
 
 
@@ -55,7 +71,7 @@ class ExampleResult:
     max_abs_difference: float
 
 
-def train_model(algorithm_name: str) -> tuple[ModelProtocol, np.ndarray]:
+def train_model(algorithm_name: str) -> tuple[ModelProtocol, np_ndarray]:
     """Train a sklearn model on Iris and return model plus features.
 
     Parameters
@@ -69,13 +85,13 @@ def train_model(algorithm_name: str) -> tuple[ModelProtocol, np.ndarray]:
     tuple[ModelProtocol, numpy.ndarray]
         Trained model and full training feature matrix.
     """
-    datasets_module = importlib.import_module("sklearn.datasets")
-    linear_model_module = importlib.import_module("sklearn.linear_model")
-    ensemble_module = importlib.import_module("sklearn.ensemble")
-    neural_network_module = importlib.import_module("sklearn.neural_network")
+    datasets_module = importlib_import_module("sklearn.datasets")
+    linear_model_module = importlib_import_module("sklearn.linear_model")
+    ensemble_module = importlib_import_module("sklearn.ensemble")
+    neural_network_module = importlib_import_module("sklearn.neural_network")
 
     iris = datasets_module.load_iris()
-    features = iris.data.astype(np.float32)
+    features = iris.data.astype(np_float32)
     labels = iris.target
 
     if algorithm_name == "logistic_regression":
@@ -116,8 +132,8 @@ def export_model_to_onnx(
     pathlib.Path
         Written ONNX model path.
     """
-    skl2onnx_module = importlib.import_module("skl2onnx")
-    data_types_module = importlib.import_module("skl2onnx.common.data_types")
+    skl2onnx_module = importlib_import_module("skl2onnx")
+    data_types_module = importlib_import_module("skl2onnx.common.data_types")
     convert_sklearn = skl2onnx_module.convert_sklearn
     float_tensor_type = data_types_module.FloatTensorType
 
@@ -140,15 +156,15 @@ def temporary_environment(overrides: dict[str, str]) -> Iterator[None]:
     previous: dict[str, str | None] = {}
     try:
         for key, value in overrides.items():
-            previous[key] = os.getenv(key)
-            os.environ[key] = value
+            previous[key] = os_getenv(key)
+            os_environ[key] = value
         yield
     finally:
         for key, old_value in previous.items():
             if old_value is None:
-                os.environ.pop(key, None)
+                os_environ.pop(key, None)
             else:
-                os.environ[key] = old_value
+                os_environ[key] = old_value
 
 
 def _find_free_port() -> int:
@@ -159,7 +175,7 @@ def _find_free_port() -> int:
     int
         Free port number.
     """
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+    with socket_socket(socket_AF_INET, socket_SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
 
@@ -181,7 +197,7 @@ def run_serving_process(model_directory: Path) -> Iterator[str]:
     port = _find_free_port()
     base_url = f"http://127.0.0.1:{port}"
 
-    environment = os.environ.copy()
+    environment = os_environ.copy()
     environment.update(
         {
             "SM_MODEL_DIR": str(model_directory),
@@ -194,9 +210,9 @@ def run_serving_process(model_directory: Path) -> Iterator[str]:
         }
     )
 
-    process = subprocess.Popen(
+    process = subprocess_Popen(
         [
-            sys.executable,
+            sys_executable,
             "-m",
             "uvicorn",
             "serving:application",
@@ -209,8 +225,8 @@ def run_serving_process(model_directory: Path) -> Iterator[str]:
         ],
         cwd=str(REPOSITORY_ROOT),
         env=environment,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=subprocess_PIPE,
+        stderr=subprocess_STDOUT,
         text=True,
     )
 
@@ -222,12 +238,12 @@ def run_serving_process(model_directory: Path) -> Iterator[str]:
             process.terminate()
             try:
                 process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
+            except subprocess_TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
 
 
-def _wait_until_server_ready(process: subprocess.Popen[str], base_url: str) -> None:
+def _wait_until_server_ready(process: subprocess_Popen[str], base_url: str) -> None:
     """Wait until serving API responds to liveness check.
 
     Parameters
@@ -237,7 +253,7 @@ def _wait_until_server_ready(process: subprocess.Popen[str], base_url: str) -> N
     base_url : str
         Local API base URL.
     """
-    with httpx.Client(timeout=1.0) as client:
+    with httpx_Client(timeout=1.0) as client:
         for _ in range(60):
             exit_code = process.poll()
             if exit_code is not None:
@@ -250,13 +266,13 @@ def _wait_until_server_ready(process: subprocess.Popen[str], base_url: str) -> N
                 response = client.get(f"{base_url}/live")
                 if response.status_code == 200:
                     return
-            except httpx.HTTPError:
+            except httpx_HTTPError:
                 pass
-            time.sleep(0.2)
+            time_sleep(0.2)
     raise SystemExit("FAIL: serving process did not become live in time.")
 
 
-def _to_label_vector(raw_predictions: list[object], expected_rows: int) -> np.ndarray:
+def _to_label_vector(raw_predictions: list[object], expected_rows: int) -> np_ndarray:
     """Normalize served predictions to a 1D numeric label vector.
 
     Parameters
@@ -271,7 +287,7 @@ def _to_label_vector(raw_predictions: list[object], expected_rows: int) -> np.nd
     numpy.ndarray
         One-dimensional label vector.
     """
-    prediction_array = np.asarray(raw_predictions)
+    prediction_array = np_asarray(raw_predictions)
     if prediction_array.size == 0:
         raise SystemExit("FAIL: invocation returned no predictions.")
     if prediction_array.ndim == 2 and prediction_array.shape[1] == 1:
@@ -286,11 +302,11 @@ def _to_label_vector(raw_predictions: list[object], expected_rows: int) -> np.nd
             "FAIL: prediction count mismatch "
             f"(expected={expected_rows}, got={prediction_array.shape[0]})."
         )
-    if not np.issubdtype(prediction_array.dtype, np.number):
+    if not np_issubdtype(prediction_array.dtype, np_number):
         raise SystemExit(
             f"FAIL: expected numeric predictions, got dtype={prediction_array.dtype}."
         )
-    return prediction_array.astype(np.float64)
+    return prediction_array.astype(np_float64)
 
 
 def run_train_and_serve_demo(algorithm_name: str) -> ExampleResult:
@@ -317,7 +333,7 @@ def run_train_and_serve_demo(algorithm_name: str) -> ExampleResult:
         raise SystemExit(f"FAIL: ONNX model was not created at {model_path}.")
 
     batch = features[:8]
-    sklearn_predictions = np.asarray(model.predict(batch), dtype=np.float64).reshape(-1)
+    sklearn_predictions = np_asarray(model.predict(batch), dtype=np_float64).reshape(-1)
 
     live_code, ready_code, invocation_code, raw_predictions = run_inference_request(
         model_directory, batch
@@ -337,8 +353,8 @@ def run_train_and_serve_demo(algorithm_name: str) -> ExampleResult:
             f"served={served_predictions.shape})."
         )
 
-    max_abs_difference = float(np.max(np.abs(sklearn_predictions - served_predictions)))
-    if not np.array_equal(sklearn_predictions, served_predictions):
+    max_abs_difference = float(np_max(np_abs(sklearn_predictions - served_predictions)))
+    if not np_array_equal(sklearn_predictions, served_predictions):
         raise SystemExit(
             "FAIL: prediction mismatch between sklearn and serving "
             f"(max_abs_diff={max_abs_difference:.6f})."
@@ -360,7 +376,7 @@ def run_train_and_serve_demo(algorithm_name: str) -> ExampleResult:
 
 
 def run_inference_request(
-    model_directory: Path, rows: np.ndarray
+    model_directory: Path, rows: np_ndarray
 ) -> tuple[int, int, int, list[object]]:
     """Run an inference request against the local serving process.
 
@@ -379,7 +395,7 @@ def run_inference_request(
     payload_text = "\n".join(",".join(map(str, row.tolist())) for row in rows)
     payload = payload_text.encode("utf-8")
     with run_serving_process(model_directory) as base_url:
-        with httpx.Client(base_url=base_url, timeout=10.0) as client:
+        with httpx_Client(base_url=base_url, timeout=10.0) as client:
             liveness_response = client.get("/live")
             readiness_response = client.get("/ready")
             invocation_response = client.post(

@@ -54,3 +54,47 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]
+
+      - id: pytest-integration
+        name: pytest (integration)
+        entry: .venv/bin/python -m pytest -q tests/integration_tests
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: pytest-e2e
+        name: pytest (e2e)
+        entry: .venv/bin/python -m pytest -q tests/e2e_tests
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: coverage-overall
+        name: coverage (overall)
+        entry: >-
+          bash -lc 'set -euo pipefail;
+          .venv/bin/python -m pytest -q --cov=src --cov-report=xml:coverage.xml --cov-report=term;
+          COVERAGE_LABEL="overall" COVERAGE_MIN="${OVERALL_COVERAGE_MIN:-90}" COVERAGE_MAX_DRIFT="${OVERALL_COVERAGE_MAX_DRIFT:-1}" COVERAGE_XML="coverage.xml" .venv/bin/python scripts/check_coverage.py'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: coverage-integration
+        name: coverage (integration)
+        entry: >-
+          bash -lc 'set -euo pipefail;
+          .venv/bin/python -m pytest -q tests/integration_tests --cov=src --cov-report=xml:coverage-integration.xml --cov-report=term --cov-fail-under=0;
+          COVERAGE_LABEL="integration" COVERAGE_MIN="${INTEGRATION_COVERAGE_MIN:-55}" COVERAGE_MAX_DRIFT="${INTEGRATION_COVERAGE_MAX_DRIFT:-10}" COVERAGE_XML="coverage-integration.xml" .venv/bin/python scripts/check_coverage.py'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: coverage-e2e
+        name: coverage (e2e)
+        entry: >-
+          bash -lc 'set -euo pipefail;
+          .venv/bin/python -m pytest -q tests/e2e_tests --cov=src --cov-report=xml:coverage-e2e.xml --cov-report=term --cov-fail-under=0;
+          COVERAGE_LABEL="e2e" COVERAGE_MIN="${E2E_COVERAGE_MIN:-45}" COVERAGE_MAX_DRIFT="${E2E_COVERAGE_MAX_DRIFT:-10}" COVERAGE_XML="coverage-e2e.xml" .venv/bin/python scripts/check_coverage.py'
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

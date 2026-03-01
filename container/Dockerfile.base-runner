@@ -1,4 +1,5 @@
-FROM ffreis/base
+ARG BASE_IMAGE=ffreis/base
+FROM ${BASE_IMAGE}
 
 USER root
 

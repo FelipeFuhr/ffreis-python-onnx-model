@@ -3,10 +3,11 @@
 from collections.abc import AsyncIterator, Iterator
 from typing import Self
 
-import httpx
-import pytest
-import pytest_asyncio
 from fastapi import FastAPI
+from httpx import ASGITransport as httpx_ASGITransport
+from httpx import AsyncClient as httpx_AsyncClient
+from pytest import MonkeyPatch, fixture
+from pytest_asyncio import fixture as asyncio_fixture
 
 from application import create_application
 from config import Settings
@@ -67,8 +68,8 @@ class DummyAdapter:
         raise ValueError("Unknown mode")
 
 
-@pytest.fixture
-def base_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+@fixture
+def base_env(monkeypatch: MonkeyPatch) -> Iterator[None]:
     """Set baseline environment variables for application tests.
 
     Parameters
@@ -101,7 +102,7 @@ def base_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     yield
 
 
-def _make_client(app: FastAPI) -> httpx.AsyncClient:
+def _make_client(app: FastAPI) -> httpx_AsyncClient:
     """Create an ASGI test client for the given FastAPI application.
 
     Parameters
@@ -114,12 +115,12 @@ def _make_client(app: FastAPI) -> httpx.AsyncClient:
     httpx.AsyncClient
         Return value produced by helper logic in this test module.
     """
-    transport = httpx.ASGITransport(app=app)
-    return httpx.AsyncClient(transport=transport, base_url="http://test")
+    transport = httpx_ASGITransport(app=app)
+    return httpx_AsyncClient(transport=transport, base_url="http://test")
 
 
-@pytest.fixture
-def app_list_adapter(monkeypatch: pytest.MonkeyPatch, base_env: None) -> FastAPI:
+@fixture
+def app_list_adapter(monkeypatch: MonkeyPatch, base_env: None) -> FastAPI:
     """Build app fixture backed by list-style dummy predictions.
 
     Parameters
@@ -142,8 +143,8 @@ def app_list_adapter(monkeypatch: pytest.MonkeyPatch, base_env: None) -> FastAPI
     return create_application(Settings())
 
 
-@pytest.fixture
-def app_dict_adapter(monkeypatch: pytest.MonkeyPatch, base_env: None) -> FastAPI:
+@fixture
+def app_dict_adapter(monkeypatch: MonkeyPatch, base_env: None) -> FastAPI:
     """Build app fixture backed by dict-style dummy predictions.
 
     Parameters
@@ -166,8 +167,8 @@ def app_dict_adapter(monkeypatch: pytest.MonkeyPatch, base_env: None) -> FastAPI
     return create_application(Settings())
 
 
-@pytest_asyncio.fixture
-async def client_list(app_list_adapter: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+@asyncio_fixture
+async def client_list(app_list_adapter: FastAPI) -> AsyncIterator[httpx_AsyncClient]:
     """Provide async client fixture for list-adapter application.
 
     Parameters
@@ -184,8 +185,8 @@ async def client_list(app_list_adapter: FastAPI) -> AsyncIterator[httpx.AsyncCli
         yield client
 
 
-@pytest_asyncio.fixture
-async def client_dict(app_dict_adapter: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
+@asyncio_fixture
+async def client_dict(app_dict_adapter: FastAPI) -> AsyncIterator[httpx_AsyncClient]:
     """Provide async client fixture for dict-adapter application.
 
     Parameters

@@ -2,26 +2,158 @@
 
 from __future__ import annotations
 
-import importlib
-import logging
+from contextlib import AbstractContextManager
+from importlib import import_module as importlib_import_module
+from logging import getLogger as logging_getLogger
 from typing import Protocol, cast
 
 from fastapi import FastAPI
 
 from config import Settings
 
-log = logging.getLogger("otel")
+log = logging_getLogger("otel")
 
-trace: object | None = None
-propagate: object | None = None
-OTLPSpanExporter: object | None = None
-FastAPIInstrumentor: object | None = None
-LoggingInstrumentor: object | None = None
-RequestsInstrumentor: object | None = None
-HTTPXClientInstrumentor: object | None = None
-Resource: object | None = None
-TracerProvider: object | None = None
-BatchSpanProcessor: object | None = None
+
+class SpanContextProtocol(Protocol):
+    """Span context fields used for correlation."""
+
+    trace_id: int
+    span_id: int
+    is_valid: bool
+
+
+class SpanProtocol(Protocol):
+    """Current-span protocol used in correlation helpers."""
+
+    def get_span_context(self: SpanProtocol) -> SpanContextProtocol:
+        """Return span context."""
+
+
+class TracerProtocol(Protocol):
+    """OpenTelemetry tracer protocol."""
+
+    def start_as_current_span(
+        self: TracerProtocol, name: str
+    ) -> AbstractContextManager[SpanProtocol]:
+        """Start span context manager."""
+
+
+class ResourceInstanceProtocol(Protocol):
+    """Marker protocol for resource instances."""
+
+
+class ExporterProtocol(Protocol):
+    """Marker protocol for OTLP exporters."""
+
+
+class BatchProcessorProtocol(Protocol):
+    """Marker protocol for batch span processors."""
+
+
+class TraceModuleProtocol(Protocol):
+    """Subset of `opentelemetry.trace` module used by this service."""
+
+    def get_tracer(self: TraceModuleProtocol, name: str) -> TracerProtocol:
+        """Return tracer by name."""
+
+    def set_tracer_provider(
+        self: TraceModuleProtocol, provider: TracerProviderProtocol
+    ) -> None:
+        """Set tracer provider."""
+
+    def get_current_span(self: TraceModuleProtocol) -> SpanProtocol:
+        """Return current span."""
+
+
+class ResourceProtocol(Protocol):
+    """OpenTelemetry resource factory protocol."""
+
+    @staticmethod
+    def create(payload: dict[str, str]) -> ResourceInstanceProtocol:
+        """Create resource instance."""
+
+
+class TracerProviderProtocol(Protocol):
+    """Trace provider methods used by setup."""
+
+    def add_span_processor(
+        self: TracerProviderProtocol, processor: BatchProcessorProtocol
+    ) -> None:
+        """Attach span processor."""
+
+
+class TracerProviderFactoryProtocol(Protocol):
+    """Trace provider constructor protocol."""
+
+    def __call__(
+        self: TracerProviderFactoryProtocol, *, resource: ResourceInstanceProtocol
+    ) -> TracerProviderProtocol:
+        """Create provider instance."""
+
+
+class ExporterFactoryProtocol(Protocol):
+    """Exporter constructor protocol."""
+
+    def __call__(
+        self: ExporterFactoryProtocol,
+        *,
+        endpoint: str,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> ExporterProtocol:
+        """Create exporter."""
+
+
+class BatchProcessorFactoryProtocol(Protocol):
+    """Batch processor constructor protocol."""
+
+    def __call__(
+        self: BatchProcessorFactoryProtocol, exporter: ExporterProtocol
+    ) -> BatchProcessorProtocol:
+        """Create batch span processor."""
+
+
+class InstrumentorProtocol(Protocol):
+    """Protocol for request/logging instrumentors."""
+
+    def instrument(
+        self: InstrumentorProtocol, set_logging_format: bool = False
+    ) -> None:
+        """Enable instrumentation."""
+
+
+class InstrumentorFactoryProtocol(Protocol):
+    """Instrumentation factory protocol."""
+
+    def __call__(self: InstrumentorFactoryProtocol) -> InstrumentorProtocol:
+        """Create instrumentor instance."""
+
+
+class PropagatorModuleProtocol(Protocol):
+    """OpenTelemetry propagator module protocol."""
+
+    def inject(self: PropagatorModuleProtocol, carrier: dict[str, str]) -> None:
+        """Inject active context into a carrier mapping."""
+
+
+class FastApiInstrumentorProtocol(Protocol):
+    """FastAPI instrumentor protocol."""
+
+    @staticmethod
+    def instrument_app(application: FastAPI) -> None:
+        """Instrument FastAPI application."""
+
+
+trace: TraceModuleProtocol | None = None
+propagate: PropagatorModuleProtocol | None = None
+OTLPSpanExporter: ExporterFactoryProtocol | None = None
+FastAPIInstrumentor: FastApiInstrumentorProtocol | None = None
+LoggingInstrumentor: InstrumentorFactoryProtocol | None = None
+RequestsInstrumentor: InstrumentorFactoryProtocol | None = None
+HTTPXClientInstrumentor: InstrumentorFactoryProtocol | None = None
+Resource: ResourceProtocol | None = None
+TracerProvider: TracerProviderFactoryProtocol | None = None
+BatchSpanProcessor: BatchProcessorFactoryProtocol | None = None
 
 
 def _load_optional_telemetry_components() -> None:
@@ -38,30 +170,57 @@ def _load_optional_telemetry_components() -> None:
     global BatchSpanProcessor
 
     try:
-        trace = importlib.import_module("opentelemetry").trace
-        propagate = importlib.import_module("opentelemetry.propagate")
-        OTLPSpanExporter = importlib.import_module(
-            "opentelemetry.exporter.otlp.proto.http.trace_exporter"
-        ).OTLPSpanExporter
-        FastAPIInstrumentor = importlib.import_module(
-            "opentelemetry.instrumentation.fastapi"
-        ).FastAPIInstrumentor
-        LoggingInstrumentor = importlib.import_module(
-            "opentelemetry.instrumentation.logging"
-        ).LoggingInstrumentor
-        RequestsInstrumentor = importlib.import_module(
-            "opentelemetry.instrumentation.requests"
-        ).RequestsInstrumentor
-        HTTPXClientInstrumentor = importlib.import_module(
-            "opentelemetry.instrumentation.httpx"
-        ).HTTPXClientInstrumentor
-        Resource = importlib.import_module("opentelemetry.sdk.resources").Resource
-        TracerProvider = importlib.import_module(
-            "opentelemetry.sdk.trace"
-        ).TracerProvider
-        BatchSpanProcessor = importlib.import_module(
-            "opentelemetry.sdk.trace.export"
-        ).BatchSpanProcessor
+        trace = cast(
+            TraceModuleProtocol, importlib_import_module("opentelemetry").trace
+        )
+        propagate = cast(
+            PropagatorModuleProtocol,
+            importlib_import_module("opentelemetry.propagate"),
+        )
+        OTLPSpanExporter = cast(
+            ExporterFactoryProtocol,
+            importlib_import_module(
+                "opentelemetry.exporter.otlp.proto.http.trace_exporter"
+            ).OTLPSpanExporter,
+        )
+        FastAPIInstrumentor = cast(
+            FastApiInstrumentorProtocol,
+            importlib_import_module(
+                "opentelemetry.instrumentation.fastapi"
+            ).FastAPIInstrumentor,
+        )
+        LoggingInstrumentor = cast(
+            InstrumentorFactoryProtocol,
+            importlib_import_module(
+                "opentelemetry.instrumentation.logging"
+            ).LoggingInstrumentor,
+        )
+        RequestsInstrumentor = cast(
+            InstrumentorFactoryProtocol,
+            importlib_import_module(
+                "opentelemetry.instrumentation.requests"
+            ).RequestsInstrumentor,
+        )
+        HTTPXClientInstrumentor = cast(
+            InstrumentorFactoryProtocol,
+            importlib_import_module(
+                "opentelemetry.instrumentation.httpx"
+            ).HTTPXClientInstrumentor,
+        )
+        Resource = cast(
+            ResourceProtocol,
+            importlib_import_module("opentelemetry.sdk.resources").Resource,
+        )
+        TracerProvider = cast(
+            TracerProviderFactoryProtocol,
+            importlib_import_module("opentelemetry.sdk.trace").TracerProvider,
+        )
+        BatchSpanProcessor = cast(
+            BatchProcessorFactoryProtocol,
+            importlib_import_module(
+                "opentelemetry.sdk.trace.export"
+            ).BatchSpanProcessor,
+        )
     except Exception:  # pragma: no cover - optional dependency
         trace = None
         propagate = None
@@ -78,158 +237,25 @@ def _load_optional_telemetry_components() -> None:
 _load_optional_telemetry_components()
 
 
-class TracerProtocol(Protocol):
-    """Protocol for OpenTelemetry tracer-like objects."""
-
-    def start_as_current_span(self: TracerProtocol, name: str) -> object:
-        """Start span context manager."""
-
-
-class TraceModuleProtocol(Protocol):
-    """Protocol for `opentelemetry.trace` module API used here."""
-
-    def get_tracer(self: TraceModuleProtocol, name: str) -> TracerProtocol:
-        """Return tracer by name."""
-
-    def set_tracer_provider(self: TraceModuleProtocol, provider: object) -> None:
-        """Set tracer provider."""
-
-    def get_current_span(self: TraceModuleProtocol) -> object:
-        """Return current span."""
-
-
-class SpanContextProtocol(Protocol):
-    """Protocol for span context fields used for correlation."""
-
-    trace_id: int
-    span_id: int
-    is_valid: bool
-
-
-class SpanProtocol(Protocol):
-    """Protocol for current-span object used in correlation helpers."""
-
-    def get_span_context(self: SpanProtocol) -> SpanContextProtocol:
-        """Return span context."""
-
-
-class ResourceProtocol(Protocol):
-    """Protocol for OpenTelemetry resource factory."""
-
-    @staticmethod
-    def create(payload: dict[str, str]) -> object:
-        """Create resource object."""
-
-
-class TracerProviderProtocol(Protocol):
-    """Protocol for trace provider constructor and methods."""
-
-    def add_span_processor(self: TracerProviderProtocol, processor: object) -> None:
-        """Attach span processor."""
-
-
-class TracerProviderFactoryProtocol(Protocol):
-    """Protocol for trace provider constructor."""
-
-    def __call__(
-        self: TracerProviderFactoryProtocol, *, resource: object
-    ) -> TracerProviderProtocol:
-        """Create provider instance."""
-
-
-class ExporterFactoryProtocol(Protocol):
-    """Protocol for exporter constructor."""
-
-    def __call__(
-        self: ExporterFactoryProtocol,
-        *,
-        endpoint: str,
-        headers: dict[str, str],
-        timeout: float,
-    ) -> object:
-        """Create exporter."""
-
-
-class BatchProcessorFactoryProtocol(Protocol):
-    """Protocol for batch span processor constructor."""
-
-    def __call__(self: BatchProcessorFactoryProtocol, exporter: object) -> object:
-        """Create batch span processor."""
-
-
-class InstrumentorFactoryProtocol(Protocol):
-    """Protocol for instrumentation factories."""
-
-    def __call__(self: InstrumentorFactoryProtocol) -> InstrumentorProtocol:
-        """Create instrumentor instance."""
-
-
-class InstrumentorProtocol(Protocol):
-    """Protocol for request/logging instrumentors."""
-
-    def instrument(
-        self: InstrumentorProtocol, set_logging_format: bool = False
-    ) -> None:
-        """Enable instrumentation."""
-
-
-class PropagatorModuleProtocol(Protocol):
-    """Protocol for OpenTelemetry propagator module."""
-
-    def inject(self: PropagatorModuleProtocol, carrier: dict[str, str]) -> None:
-        """Inject active context into the given carrier."""
-
-
-class FastApiInstrumentorProtocol(Protocol):
-    """Protocol for FastAPI instrumentor."""
-
-    @staticmethod
-    def instrument_app(application: FastAPI) -> None:
-        """Instrument FastAPI application."""
-
-
 def get_tracer(name: str) -> TracerProtocol | None:
     """Return configured tracer when telemetry dependency is present."""
     if trace is None:
         return None
-    trace_module = cast(TraceModuleProtocol, trace)
-    return trace_module.get_tracer(name)
+    return trace.get_tracer(name)
 
 
 def _parse_headers(s: str) -> dict[str, str]:
-    """Parse OTLP headers from comma-separated key-value string.
-
-    Parameters
-    ----------
-    s : str
-        Header string formatted as ``k1=v1,k2=v2``.
-
-    Returns
-    -------
-    dict[str, str]
-        Parsed header mapping.
-    """
+    """Parse OTLP headers from comma-separated key-value string."""
     parsed_headers = {}
     for part in [p.strip() for p in (s or "").split(",") if p.strip()]:
         if "=" in part:
-            k, v = part.split("=", 1)
-            parsed_headers[k.strip()] = v.strip()
+            key, value = part.split("=", 1)
+            parsed_headers[key.strip()] = value.strip()
     return parsed_headers
 
 
 def setup_telemetry(settings: Settings) -> bool:
-    """Configure OpenTelemetry exporters and instrumentors.
-
-    Parameters
-    ----------
-    settings : Settings
-        Runtime settings containing telemetry controls.
-
-    Returns
-    -------
-    bool
-        ``True`` when telemetry exporter has been configured.
-    """
+    """Configure OpenTelemetry exporters and instrumentors."""
     if not settings.otel_enabled:
         log.info("OTEL disabled")
         return False
@@ -250,7 +276,7 @@ def setup_telemetry(settings: Settings) -> bool:
         log.info("OTEL enabled but no endpoint configured; exporter disabled.")
         return False
 
-    resource = cast(ResourceProtocol, Resource).create(
+    resource = Resource.create(
         {
             "service.name": settings.service_name,
             "service.version": settings.service_version,
@@ -259,59 +285,36 @@ def setup_telemetry(settings: Settings) -> bool:
             "cloud.platform": "aws_sagemaker",
         }
     )
+    provider = TracerProvider(resource=resource)
+    trace.set_tracer_provider(provider)
 
-    provider = cast(TracerProviderFactoryProtocol, TracerProvider)(resource=resource)
-    cast(TraceModuleProtocol, trace).set_tracer_provider(provider)
-
-    exporter = cast(ExporterFactoryProtocol, OTLPSpanExporter)(
+    exporter = OTLPSpanExporter(
         endpoint=settings.otel_endpoint,
         headers=_parse_headers(settings.otel_headers),
         timeout=settings.otel_timeout_s,
     )
-    provider.add_span_processor(
-        cast(BatchProcessorFactoryProtocol, BatchSpanProcessor)(exporter)
-    )
+    provider.add_span_processor(BatchSpanProcessor(exporter))
 
-    cast(InstrumentorFactoryProtocol, RequestsInstrumentor)().instrument()
+    RequestsInstrumentor().instrument()
     if HTTPXClientInstrumentor is not None:
-        cast(InstrumentorFactoryProtocol, HTTPXClientInstrumentor)().instrument()
-    cast(InstrumentorFactoryProtocol, LoggingInstrumentor)().instrument(
-        set_logging_format=True
-    )
+        HTTPXClientInstrumentor().instrument()
+    LoggingInstrumentor().instrument(set_logging_format=True)
 
     log.info("OTEL exporter configured: %s", settings.otel_endpoint)
     return True
 
 
 def instrument_fastapi_application(settings: Settings, application: FastAPI) -> None:
-    """Instrument a FastAPI application when telemetry is enabled.
-
-    Parameters
-    ----------
-    settings : Settings
-        Runtime settings containing telemetry controls.
-    application : fastapi.FastAPI
-        FastAPI application instance.
-    """
+    """Instrument a FastAPI application when telemetry is enabled."""
     if settings.otel_enabled and FastAPIInstrumentor is not None:
-        cast(FastApiInstrumentorProtocol, FastAPIInstrumentor).instrument_app(
-            application
-        )
+        FastAPIInstrumentor.instrument_app(application)
 
 
 def get_current_trace_identifiers() -> dict[str, str]:
-    """Return current trace/span identifiers when available.
-
-    Returns
-    -------
-    dict[str, str]
-        Mapping with ``trace_id`` and ``span_id`` when context is valid,
-        otherwise an empty dictionary.
-    """
+    """Return current trace/span identifiers when available."""
     if trace is None:
         return {}
-    current_span = cast(TraceModuleProtocol, trace).get_current_span()
-    span_context = cast(SpanProtocol, current_span).get_span_context()
+    span_context = trace.get_current_span().get_span_context()
     if not span_context.is_valid:
         return {}
     return {
@@ -323,21 +326,9 @@ def get_current_trace_identifiers() -> dict[str, str]:
 def inject_current_trace_context(
     carrier: dict[str, str] | None = None,
 ) -> dict[str, str]:
-    """Inject active trace context headers into a carrier.
-
-    Parameters
-    ----------
-    carrier : dict[str, str] | None, default=None
-        Target carrier to receive propagated headers.
-
-    Returns
-    -------
-    dict[str, str]
-        Carrier populated with trace propagation headers (for example
-        ``traceparent`` and ``tracestate``) when OpenTelemetry is available.
-    """
+    """Inject active trace context headers into a carrier."""
     target_carrier = carrier or {}
     if propagate is None:
         return target_carrier
-    cast(PropagatorModuleProtocol, propagate).inject(target_carrier)
+    propagate.inject(target_carrier)
     return target_carrier

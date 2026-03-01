@@ -2,27 +2,32 @@
 
 from __future__ import annotations
 
-import os
-import socket
-import threading
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from os import environ as os_environ
+from os import getenv as os_getenv
 from pathlib import Path
+from socket import socket as socket_socket
+from threading import Thread as threading_Thread
+from time import sleep as time_sleep
+from time import time as time_time
 
-import httpx
-import pytest
+from httpx import get as httpx_get
+from httpx import post as httpx_post
+from pytest import importorskip as pytest_importorskip
+from pytest import mark as pytest_mark
 
-onnx = pytest.importorskip("onnx")
-pytest.importorskip("onnxruntime")
-uvicorn = pytest.importorskip("uvicorn")
+from application import create_application
+from config import Settings
 
-from onnx import TensorProto, helper  # noqa: E402
+onnx = pytest_importorskip("onnx")
+pytest_importorskip("onnxruntime")
+uvicorn = pytest_importorskip("uvicorn")
 
-from application import create_application  # noqa: E402
-from config import Settings  # noqa: E402
+TensorProto = onnx.TensorProto
+helper = onnx.helper
 
-pytestmark = pytest.mark.e2e
+pytestmark = pytest_mark.e2e
 
 
 def _write_tiny_sum_model(path: Path) -> None:
@@ -46,7 +51,7 @@ def _write_tiny_two_input_add_model(path: Path) -> None:
 
 
 def _free_port() -> int:
-    with socket.socket() as sock:
+    with socket_socket() as sock:
         sock.bind(("127.0.0.1", 0))
         return int(sock.getsockname()[1])
 
@@ -56,15 +61,15 @@ def _temporary_environment(overrides: dict[str, str]) -> Iterator[None]:
     previous: dict[str, str | None] = {}
     try:
         for key, value in overrides.items():
-            previous[key] = os.getenv(key)
-            os.environ[key] = value
+            previous[key] = os_getenv(key)
+            os_environ[key] = value
         yield
     finally:
         for key, old_value in previous.items():
             if old_value is None:
-                os.environ.pop(key, None)
+                os_environ.pop(key, None)
             else:
-                os.environ[key] = old_value
+                os_environ[key] = old_value
 
 
 @contextmanager
@@ -78,7 +83,7 @@ def _run_live_server(base_url: str) -> Iterator[None]:
         log_level="warning",
     )
     server = uvicorn.Server(config)
-    server_thread = threading.Thread(target=server.run, daemon=True)
+    server_thread = threading_Thread(target=server.run, daemon=True)
     server_thread.start()
     try:
         _wait_for_status(base_url, endpoint="/live", expected_status=200)
@@ -91,15 +96,15 @@ def _run_live_server(base_url: str) -> Iterator[None]:
 def _wait_for_status(
     base_url: str, endpoint: str, expected_status: int, timeout_s: float = 15.0
 ) -> None:
-    start = time.time()
-    while time.time() - start < timeout_s:
+    start = time_time()
+    while time_time() - start < timeout_s:
         try:
-            response = httpx.get(f"{base_url}{endpoint}", timeout=1.0)
+            response = httpx_get(f"{base_url}{endpoint}", timeout=1.0)
             if response.status_code == expected_status:
                 return
         except Exception:
             pass
-        time.sleep(0.2)
+        time_sleep(0.2)
     raise RuntimeError(f"Server did not reach {endpoint}={expected_status} in time")
 
 
@@ -120,7 +125,7 @@ def test_live_server_end_to_end_inference(tmp_path: Path) -> None:
 
     with _temporary_environment(environment):
         with _run_live_server(base_url):
-            response = httpx.post(
+            response = httpx_post(
                 f"{base_url}/invocations",
                 content=b"1,2,3\n4,5,6\n",
                 headers={"Content-Type": "text/csv", "Accept": "application/json"},
@@ -148,17 +153,19 @@ def test_live_server_health_metrics_and_validation_errors(tmp_path: Path) -> Non
 
     with _temporary_environment(environment):
         with _run_live_server(base_url):
-            live_response = httpx.get(f"{base_url}/live", timeout=5.0)
-            ready_response = httpx.get(f"{base_url}/ready", timeout=5.0)
-            metrics_response = httpx.get(f"{base_url}/metrics", timeout=5.0)
+            live_response = httpx_get(f"{base_url}/live", timeout=5.0)
+            healthz_response = httpx_get(f"{base_url}/healthz", timeout=5.0)
+            ready_response = httpx_get(f"{base_url}/ready", timeout=5.0)
+            metrics_response = httpx_get(f"{base_url}/metrics", timeout=5.0)
             assert live_response.status_code == 200
+            assert healthz_response.status_code == 200
             assert ready_response.status_code == 200
             assert metrics_response.status_code == 200
             assert (
                 "byoc_up" in metrics_response.text or "# HELP" in metrics_response.text
             )
 
-            too_many_records_response = httpx.post(
+            too_many_records_response = httpx_post(
                 f"{base_url}/invocations",
                 content=b"1,2,3\n4,5,6\n",
                 headers={"Content-Type": "text/csv", "Accept": "application/json"},
@@ -167,7 +174,7 @@ def test_live_server_health_metrics_and_validation_errors(tmp_path: Path) -> Non
             assert too_many_records_response.status_code == 400
             assert "too_many_records" in too_many_records_response.json()["error"]
 
-            unsupported_content_type_response = httpx.post(
+            unsupported_content_type_response = httpx_post(
                 f"{base_url}/invocations",
                 content=b"<xml/>",
                 headers={
@@ -202,7 +209,7 @@ def test_live_server_jsonl_multi_input_end_to_end(tmp_path: Path) -> None:
 
     with _temporary_environment(environment):
         with _run_live_server(base_url):
-            response = httpx.post(
+            response = httpx_post(
                 f"{base_url}/invocations",
                 content=(
                     b'{"feature_a":[1.0],"feature_b":[2.0]}\n'
@@ -237,7 +244,7 @@ def test_live_server_csv_header_auto_and_wrapped_json_output(tmp_path: Path) -> 
 
     with _temporary_environment(environment):
         with _run_live_server(base_url):
-            response = httpx.post(
+            response = httpx_post(
                 f"{base_url}/invocations",
                 content=b"f1,f2,f3\n1,2,3\n4,5,6\n",
                 headers={"Content-Type": "text/csv", "Accept": "application/json"},
@@ -260,7 +267,7 @@ def test_live_server_readiness_failure_with_missing_model(tmp_path: Path) -> Non
 
     with _temporary_environment(environment):
         with _run_live_server(base_url):
-            ready_response = httpx.get(f"{base_url}/ready", timeout=5.0)
-            ping_response = httpx.get(f"{base_url}/ping", timeout=5.0)
+            ready_response = httpx_get(f"{base_url}/ready", timeout=5.0)
+            ping_response = httpx_get(f"{base_url}/ping", timeout=5.0)
             assert ready_response.status_code == 500
             assert ping_response.status_code == 500

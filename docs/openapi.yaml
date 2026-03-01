@@ -1,0 +1,74 @@
+openapi: 3.1.0
+info:
+  title: model-serving-universal
+  version: dev
+paths:
+  /live:
+    get:
+      summary: Live
+      description: "Return process liveness status.\n\nReturns\n-------\nfastapi.responses.PlainTextResponse\n\
+        \    HTTP 200 response when process is up."
+      operationId: live_live_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /healthz:
+    get:
+      summary: Healthz
+      description: Return process liveness status (Kubernetes-style endpoint).
+      operationId: healthz_healthz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /ready:
+    get:
+      summary: Ready
+      description: "Return model readiness status.\n\nReturns\n-------\nfastapi.responses.PlainTextResponse\n\
+        \    HTTP 200 when model is ready, otherwise HTTP 500."
+      operationId: ready_ready_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /readyz:
+    get:
+      summary: Readyz
+      description: Return model readiness status (Kubernetes-style endpoint).
+      operationId: readyz_readyz_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /ping:
+    get:
+      summary: Ping
+      description: "Return readiness status for SageMaker compatibility.\n\nReturns\n\
+        -------\nfastapi.responses.PlainTextResponse\n    HTTP 200 when model is ready,\
+        \ otherwise HTTP 500."
+      operationId: ping_ping_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+  /invocations:
+    post:
+      summary: Invocations
+      operationId: invocations_invocations_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}

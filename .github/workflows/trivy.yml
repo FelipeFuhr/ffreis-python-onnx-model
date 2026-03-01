@@ -9,7 +9,7 @@ on:
       - "tests/**"
       - "main.py"
       - "pyproject.toml"
-      - "requirements.txt"
+      - "uv.lock"
       - "container/**"
       - "scripts/**"
       - "Makefile"
@@ -22,7 +22,7 @@ on:
       - "tests/**"
       - "main.py"
       - "pyproject.toml"
-      - "requirements.txt"
+      - "uv.lock"
       - "container/**"
       - "scripts/**"
       - "Makefile"
@@ -40,6 +40,7 @@ permissions:
 jobs:
   image-scan:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
 
@@ -57,18 +58,21 @@ jobs:
       - name: Install Trivy
         run: |
           set -euo pipefail
-          TRIVY_INSTALL_REF="v0.67.2"
-          curl -sfL \
-            --proto '=https' \
-            --proto-redir '=https' \
-            "https://raw.githubusercontent.com/aquasecurity/trivy/${TRIVY_INSTALL_REF}/contrib/install.sh" \
-            | sudo sh -s -- -b /usr/local/bin
+          sudo apt-get update
+          sudo apt-get install -y wget gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | \
+            gpg --dearmor | \
+            sudo tee /usr/share/keyrings/trivy.gpg > /dev/null
+          echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main" | \
+            sudo tee /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
           trivy --version
 
-      - name: Save images and scan (sequential, Podman)
+      - name: Scan images (sequential, Podman)
         run: |
           set -euo pipefail
-          mkdir -p artifacts trivy-results
+          mkdir -p trivy-results
           images=(ffreis/base ffreis/base-builder ffreis/builder ffreis/base-runner ffreis/runner)
 
           # Warm DB once.
@@ -76,13 +80,13 @@ jobs:
 
           for image in "${images[@]}"; do
             name="${image##*/}"
-            tar="artifacts/${name}.tar"
+            archive="trivy-results/${name}.docker.tar"
 
-            podman save -o "$tar" "$image"
-            test -s "$tar"
+            podman image exists "${image}"
+            podman save --format docker-archive --output "${archive}" "${image}"
 
             trivy image \
-              --input "$tar" \
+              --input "${archive}" \
               --skip-db-update \
               --no-progress \
               --ignorefile .trivyignore.yaml \
@@ -95,7 +99,7 @@ jobs:
             test -s "trivy-results/${name}.sarif"
 
             trivy image \
-              --input "$tar" \
+              --input "${archive}" \
               --skip-db-update \
               --no-progress \
               --ignorefile .trivyignore.yaml \
@@ -109,7 +113,7 @@ jobs:
 
             echo "Full vulnerability report for ${image} (all severities):"
             trivy image \
-              --input "$tar" \
+              --input "${archive}" \
               --skip-db-update \
               --no-progress \
               --ignorefile .trivyignore.yaml \
@@ -121,7 +125,7 @@ jobs:
 
             echo "Gating ${image} on HIGH/CRITICAL vulnerabilities..."
             trivy image \
-              --input "$tar" \
+              --input "${archive}" \
               --skip-db-update \
               --no-progress \
               --ignorefile .trivyignore.yaml \
@@ -130,8 +134,6 @@ jobs:
               --ignore-unfixed \
               --exit-code 1 \
               --format table
-
-            rm -f "$tar"
           done
 
       - name: Upload Trivy JSON reports
@@ -146,16 +148,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in trivy-results/*.sarif; do
+          shopt -s nullglob
+          files=(trivy-results/*.sarif)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "::warning::No Trivy SARIF files found to upload."
+            exit 0
+          fi
+          failures=0
+          for f in "${files[@]}"; do
             name="$(basename "$f" .sarif)"
             echo "Uploading $f with category trivy-$name"
             sarif_payload="$(gzip -c "$f" | base64 | tr -d '\n')"
-            gh api \
+            if ! response="$(gh api \
               -X POST \
               /repos/${{ github.repository }}/code-scanning/sarifs \
               -f sarif="${sarif_payload}" \
               -f commit_sha="${{ github.sha }}" \
-              -f ref="${{ github.ref }}"
+              -f ref="${{ github.ref }}" 2>&1)"; then
+              failures=$((failures + 1))
+              echo "::warning title=Trivy SARIF upload failed::${f}: ${response}"
+              continue
+            fi
+            echo "${response}"
           done
+          if [ "$failures" -gt 0 ]; then
+            echo "::warning::${failures} Trivy SARIF upload(s) failed; vulnerability scan results were still generated."
+          fi
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

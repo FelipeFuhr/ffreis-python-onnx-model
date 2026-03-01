@@ -1,21 +1,23 @@
 """Tests for input output."""
 
-import json
+from json import loads as json_loads
 from typing import Self
 
-import numpy as np
-import pytest
+from numpy import int64 as np_int64
+from pytest import MonkeyPatch as pytest_MonkeyPatch
+from pytest import mark as pytest_mark
+from pytest import raises as pytest_raises
 
 from config import Settings
 from input_output import format_output, parse_payload
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest_mark.unit
 
 
 class TestParsePayload:
     """Test suite for TestParsePayload."""
 
-    def test_csv_parse_basic(self: Self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_csv_parse_basic(self: Self, monkeypatch: pytest_MonkeyPatch) -> None:
         """Verify csv parse basic.
 
         Parameters
@@ -49,7 +51,7 @@ class TestParsePayload:
         assert parsed.X.shape == (2, 2)
 
     def test_jsonl_parse_features_key(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Verify jsonl parse features key.
 
@@ -72,7 +74,7 @@ class TestParsePayload:
         )
         assert parsed.X.shape == (2, 3)
 
-    def test_strict_feature_count(self: Self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_strict_feature_count(self: Self, monkeypatch: pytest_MonkeyPatch) -> None:
         """Verify strict feature count.
 
         Parameters
@@ -87,11 +89,11 @@ class TestParsePayload:
         """
         monkeypatch.setenv("TABULAR_NUM_FEATURES", "3")
         settings = Settings()
-        with pytest.raises(ValueError, match="Feature count mismatch"):
+        with pytest_raises(ValueError, match="Feature count mismatch"):
             parse_payload(b"1,2\n3,4\n", "text/csv", settings)
 
     def test_split_id_and_feature_columns(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Verify split id and feature columns.
 
@@ -121,11 +123,11 @@ class TestParsePayload:
             Does not return a value; assertions validate expected behavior.
         """
         settings = Settings()
-        with pytest.raises(ValueError, match="Unsupported Content-Type"):
+        with pytest_raises(ValueError, match="Unsupported Content-Type"):
             parse_payload(b"<x/>", "application/xml", settings)
 
     def test_rejects_non_tabular_mode(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Verify rejects non tabular mode.
 
@@ -141,11 +143,11 @@ class TestParsePayload:
         """
         monkeypatch.setenv("INPUT_MODE", "image")
         settings = Settings()
-        with pytest.raises(ValueError, match="not implemented"):
+        with pytest_raises(ValueError, match="not implemented"):
             parse_payload(b"1,2", "text/csv", settings)
 
     def test_onnx_multi_input_builds_tensors(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Verify onnx multi input builds tensors.
 
@@ -178,11 +180,11 @@ class TestParsePayload:
 
         assert parsed.X is None
         assert parsed.tensors is not None
-        assert parsed.tensors["input_ids"].dtype == np.int64
+        assert parsed.tensors["input_ids"].dtype == np_int64
         assert parsed.tensors["attention_mask"].shape[0] == 2
 
     def test_onnx_multi_input_dtype_by_onnx_name(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Verify onnx multi input dtype by onnx name.
 
@@ -202,10 +204,10 @@ class TestParsePayload:
 
         payload = b'{"instances":[{"ids":[1,2,3]},{"ids":[4,5,6]}]}'
         parsed = parse_payload(payload, "application/json", settings)
-        assert parsed.tensors["input_ids"].dtype == np.int64
+        assert parsed.tensors["input_ids"].dtype == np_int64
 
     def test_onnx_multi_input_requires_record_keys(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Verify onnx multi input requires record keys.
 
@@ -224,11 +226,11 @@ class TestParsePayload:
         )
         settings = Settings()
         payload = b'{"instances":[{"ids":[1,2,3]}]}'
-        with pytest.raises(ValueError, match="Missing key 'mask'"):
+        with pytest_raises(ValueError, match="Missing key 'mask'"):
             parse_payload(payload, "application/json", settings)
 
     def test_onnx_multi_input_requires_object_records(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Validate onnx multi input requires object records.
 
@@ -245,7 +247,7 @@ class TestParsePayload:
         monkeypatch.setenv("ONNX_INPUT_MAP_JSON", '{"ids":"input_ids"}')
         settings = Settings()
         payload = b'{"instances":[[1,2,3],[4,5,6]]}'
-        with pytest.raises(ValueError, match="expects each record to be a JSON object"):
+        with pytest_raises(ValueError, match="expects each record to be a JSON object"):
             parse_payload(payload, "application/json", settings)
 
 
@@ -265,7 +267,7 @@ class TestFormatOutput:
             {"a": [1]}, accept="text/csv", settings=settings
         )
         assert content_type == "application/json"
-        assert json.loads(body) == {"a": [1]}
+        assert json_loads(body) == {"a": [1]}
 
     def test_csv_from_vector(self: Self) -> None:
         """Verify csv from vector.
@@ -298,7 +300,7 @@ class TestFormatOutput:
         assert body == "1,2\n3,4"
 
     def test_wrapped_json_when_predictions_only_false(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Validate wrapped json when predictions only false.
 
@@ -319,4 +321,4 @@ class TestFormatOutput:
             [7, 8], accept="application/json", settings=settings
         )
         assert content_type == "application/json"
-        assert json.loads(body) == {"outputs": [7, 8]}
+        assert json_loads(body) == {"outputs": [7, 8]}

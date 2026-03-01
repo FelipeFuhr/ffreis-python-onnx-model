@@ -1,6 +1,9 @@
+ARG BASE_RUNNER_IMAGE=ffreis/base-runner
 ARG BUILDER_IMAGE=ffreis/builder
-FROM ffreis/base-runner
+ARG UV_VENV_IMAGE=ffreis/uv-venv
+FROM ${BASE_RUNNER_IMAGE}
 ARG BUILDER_IMAGE
+ARG UV_VENV_IMAGE
 
 USER root
 
@@ -12,10 +15,11 @@ RUN apt-get update && \
     python3 && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy app runtime and venv from builder image.
-COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /opt/venv /opt/venv
+# Copy app runtime and locked venv.
+COPY --from=${UV_VENV_IMAGE} --chown=appuser:appgroup /opt/venv /opt/venv
 COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /build/*.py /run/
 COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /build/pyproject.toml /run/
+COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /build/docs /run/docs
 COPY --from=${BUILDER_IMAGE} --chown=appuser:appgroup /build/scripts/entrypoint.sh /run/
 
 RUN chmod 0750 /run/*.py /run/entrypoint.sh

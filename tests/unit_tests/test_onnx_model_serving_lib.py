@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
+from pytest import mark as pytest_mark
 
-import onnx_model_serving
+from onnx_model_serving import __all__ as onnx_model_serving___all__
 from onnx_model_serving import (
     add,
     clamp,
@@ -16,7 +16,7 @@ from onnx_model_serving import (
     toggle,
 )
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest_mark.unit
 
 
 def test_add_and_greet() -> None:
@@ -52,7 +52,7 @@ def test_repeat_sum_and_first_non_empty() -> None:
 
 def test_package_exports_expected_symbols() -> None:
     """Validate package __all__ exports helper function names."""
-    exported = set(onnx_model_serving.__all__)
+    exported = set(onnx_model_serving___all__)
     assert exported == {
         "add",
         "clamp",

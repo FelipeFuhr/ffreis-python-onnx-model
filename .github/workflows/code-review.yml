@@ -5,20 +5,26 @@ on:
     branches: [ main ]
     paths:
       - "src/**"
+      - "docs/openapi.yaml"
+      - "scripts/check_openapi.py"
+      - "scripts/check_openapi_drift.py"
       - "tests/**"
       - "main.py"
       - "pyproject.toml"
-      - "requirements.txt"
+      - "uv.lock"
       - "Makefile"
       - ".github/workflows/code-review.yml"
   push:
     branches: [ main ]
     paths:
       - "src/**"
+      - "docs/openapi.yaml"
+      - "scripts/check_openapi.py"
+      - "scripts/check_openapi_drift.py"
       - "tests/**"
       - "main.py"
       - "pyproject.toml"
-      - "requirements.txt"
+      - "uv.lock"
       - "Makefile"
       - ".github/workflows/code-review.yml"
 
@@ -34,15 +40,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b
+        with:
+          enable-cache: true
 
       - name: Lint + test
         run: |
           set -euo pipefail
           make env
           make build-local
+          make openapi-check
+          BASE_SHA="${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}"
+          HEAD_SHA="${{ github.sha }}"
+          if [ -z "${BASE_SHA}" ] || [ "${BASE_SHA}" = "0000000000000000000000000000000000000000" ]; then
+            BASE_SHA="$(git rev-parse HEAD~1)"
+          fi
+          make openapi-drift-check BASE_SHA="$BASE_SHA" HEAD_SHA="$HEAD_SHA"
           make lint
           make test

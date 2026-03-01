@@ -11,13 +11,4 @@ COPY src /app/src
 COPY examples /app/examples
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-      fastapi \
-      httpx \
-      numpy \
-      onnx \
-      onnxruntime \
-      pydantic \
-      scikit-learn \
-      skl2onnx \
-      uvicorn
+    pip install --no-cache-dir ".[examples]"

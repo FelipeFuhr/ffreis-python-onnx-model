@@ -2,33 +2,60 @@
 
 from __future__ import annotations
 
-import asyncio
-import importlib
-import logging
-import time
+from asyncio import Semaphore as asyncio_Semaphore
+from asyncio import wait_for as asyncio_wait_for
 from collections.abc import Awaitable, Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
+from importlib import import_module as importlib_import_module
+from logging import getLogger as logging_getLogger
+from pathlib import Path
+from time import time as time_time
 from types import TracebackType
 from typing import Literal, Protocol, cast
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 
 from base_adapter import BaseAdapter, load_adapter
 from config import Settings
 from input_output import format_output, parse_payload
 from parsed_types import ParsedInput
+from parsed_types import batch_size as _batch_size
 from telemetry import (
     get_current_trace_identifiers,
     get_tracer,
     instrument_fastapi_application,
     setup_telemetry,
 )
+from value_types import PredictionValue, SpanAttributeValue
 
-log = logging.getLogger("byoc")
+log = logging_getLogger("byoc")
+_OPENAPI_CONTRACT_FILE = Path(__file__).resolve().parents[1] / "docs" / "openapi.yaml"
+_SWAGGER_UI_HTML = """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>API Docs</title>
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" />
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+  <script>
+    window.ui = SwaggerUIBundle({
+      url: "/openapi.yaml",
+      dom_id: "#swagger-ui",
+      deepLinking: true,
+      presets: [SwaggerUIBundle.presets.apis],
+    });
+  </script>
+</body>
+</html>
+"""
 
 try:
-    Instrumentator = importlib.import_module(
+    Instrumentator = importlib_import_module(
         "prometheus_fastapi_instrumentator"
     ).Instrumentator
 except Exception:  # pragma: no cover - optional dependency
@@ -49,7 +76,7 @@ class _NoopSpan:
     ) -> Literal[False]:
         return False
 
-    def set_attribute(self: _NoopSpan, _k: str, _v: object) -> None:
+    def set_attribute(self: _NoopSpan, _k: str, _v: SpanAttributeValue) -> None:
         return None
 
 
@@ -62,7 +89,7 @@ def _noop_span() -> Iterator[_NoopSpan]:
 class _SpanLike(Protocol):
     """Span protocol required by this module."""
 
-    def set_attribute(self: _SpanLike, key: str, value: object) -> None:
+    def set_attribute(self: _SpanLike, key: str, value: SpanAttributeValue) -> None:
         """Set span attribute."""
 
 
@@ -88,27 +115,6 @@ class _NoopTracer:
 tracer: _TracerLike = cast(_TracerLike, get_tracer("byoc") or _NoopTracer())
 
 
-def _batch_size(parsed: ParsedInput) -> int:
-    """Extract batch size from parsed input object.
-
-    Parameters
-    ----------
-    parsed : ParsedInput
-        Parsed input data.
-
-    Returns
-    -------
-    int
-        Batch size.
-    """
-    if parsed.X is not None:
-        return int(parsed.X.shape[0])
-    if parsed.tensors:
-        first = next(iter(parsed.tensors.values()))
-        return int(first.shape[0]) if getattr(first, "ndim", 0) > 0 else 1
-    raise ValueError("Parsed input contained no features/tensors")
-
-
 class InferenceApplicationBuilder:
     """Compose and configure FastAPI inference application."""
 
@@ -122,10 +128,14 @@ class InferenceApplicationBuilder:
         """
         self.settings = settings
         self.application = FastAPI(
-            title=settings.service_name, version=settings.service_version
+            title=settings.service_name,
+            version=settings.service_version,
+            openapi_url=None,
+            docs_url=None,
+            redoc_url=None,
         )
         self._adapter: BaseAdapter | None = None
-        self._semaphore = asyncio.Semaphore(settings.max_inflight)
+        self._semaphore = asyncio_Semaphore(settings.max_inflight)
 
     def build(self: InferenceApplicationBuilder) -> FastAPI:
         """Build and return configured FastAPI application."""
@@ -194,6 +204,11 @@ class InferenceApplicationBuilder:
             """
             return self._build_liveness_response()
 
+        @self.application.get("/healthz")
+        def healthz() -> PlainTextResponse:
+            """Return process liveness status (Kubernetes-style endpoint)."""
+            return self._build_liveness_response()
+
         @self.application.get("/ready")
         def ready() -> PlainTextResponse:
             """Return model readiness status.
@@ -203,6 +218,11 @@ class InferenceApplicationBuilder:
             fastapi.responses.PlainTextResponse
                 HTTP 200 when model is ready, otherwise HTTP 500.
             """
+            return self._build_readiness_response()
+
+        @self.application.get("/readyz")
+        def readyz() -> PlainTextResponse:
+            """Return model readiness status (Kubernetes-style endpoint)."""
             return self._build_readiness_response()
 
         @self.application.get("/ping")
@@ -219,6 +239,24 @@ class InferenceApplicationBuilder:
         @self.application.post("/invocations")
         async def invocations(request: Request) -> Response:
             return await self._handle_invocation(request)
+
+        if self.settings.swagger_enabled:
+
+            @self.application.get("/openapi.yaml", include_in_schema=False)
+            def openapi_contract() -> Response:
+                if not _OPENAPI_CONTRACT_FILE.exists():
+                    return JSONResponse(
+                        {"error": "openapi_contract_not_found"}, status_code=404
+                    )
+                return PlainTextResponse(
+                    _OPENAPI_CONTRACT_FILE.read_text(encoding="utf-8"),
+                    media_type="application/yaml",
+                    status_code=200,
+                )
+
+            @self.application.get("/docs", include_in_schema=False)
+            def swagger_ui() -> HTMLResponse:
+                return HTMLResponse(_SWAGGER_UI_HTML, status_code=200)
 
     def _build_liveness_response(
         self: InferenceApplicationBuilder,
@@ -284,7 +322,7 @@ class InferenceApplicationBuilder:
         if not acquired:
             return JSONResponse({"error": "too_many_requests"}, status_code=429)
 
-        start_time = time.time()
+        start_time = time_time()
         try:
             return await self._run_inference(request=request, start_time=start_time)
         except ValueError as error:
@@ -300,7 +338,7 @@ class InferenceApplicationBuilder:
     async def _try_acquire_request_slot(self: InferenceApplicationBuilder) -> bool:
         """Try to acquire one concurrency slot within timeout."""
         try:
-            await asyncio.wait_for(
+            await asyncio_wait_for(
                 self._semaphore.acquire(),
                 timeout=self.settings.acquire_timeout_s,
             )
@@ -352,7 +390,7 @@ class InferenceApplicationBuilder:
                 settings=self.settings,
             )
             span.set_attribute("response.content_type", output_content_type)
-            span.set_attribute("latency_ms", (time.time() - start_time) * 1000.0)
+            span.set_attribute("latency_ms", (time_time() - start_time) * 1000.0)
             response = Response(
                 content=body, media_type=output_content_type, status_code=200
             )
@@ -388,7 +426,7 @@ class InferenceApplicationBuilder:
         self: InferenceApplicationBuilder,
         adapter: BaseAdapter,
         parsed_input: ParsedInput,
-    ) -> object:
+    ) -> PredictionValue:
         """Run adapter prediction under model tracing span."""
         with tracer.start_as_current_span("model.predict"):
             return adapter.predict(parsed_input)

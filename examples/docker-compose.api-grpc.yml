@@ -1,0 +1,98 @@
+services:
+  model-init:
+    build:
+      context: ..
+      dockerfile: container/Dockerfile.services
+    image: ${IMAGE_ROOT:-ffreis}-onnx-serving:${IMAGE_TAG:-api-grpc-smoke}
+    command:
+      - python
+      - examples/build_smoke_model.py
+      - /models/model.onnx
+    volumes:
+      - smoke-model:/models
+
+  serving-api:
+    image: ${IMAGE_ROOT:-ffreis}-onnx-serving:${IMAGE_TAG:-api-grpc-smoke}
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+    command:
+      - python
+      - -c
+      - |
+        import uvicorn
+        from application import create_application
+        from config import Settings
+        uvicorn.run(create_application(Settings()), host="0.0.0.0", port=8080)
+    environment:
+      SM_MODEL_DIR: /models
+      MODEL_TYPE: onnx
+      OTEL_ENABLED: "false"
+      PROMETHEUS_ENABLED: "false"
+      CSV_HAS_HEADER: "false"
+      PYTHONPATH: /app/src
+    volumes:
+      - smoke-model:/models:ro
+    ports:
+      - "127.0.0.1:18080:8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  serving-grpc:
+    image: ${IMAGE_ROOT:-ffreis}-onnx-serving:${IMAGE_TAG:-api-grpc-smoke}
+    depends_on:
+      model-init:
+        condition: service_completed_successfully
+    command:
+      - python
+      - -m
+      - onnx_model_serving.grpc.server
+      - --host
+      - 0.0.0.0
+      - --port
+      - "50052"
+    environment:
+      SM_MODEL_DIR: /models
+      MODEL_TYPE: onnx
+      OTEL_ENABLED: "false"
+      PROMETHEUS_ENABLED: "false"
+      CSV_HAS_HEADER: "false"
+      PYTHONPATH: /app/src
+    volumes:
+      - smoke-model:/models:ro
+    ports:
+      - "127.0.0.1:15052:50052"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import grpc; grpc.channel_ready_future(grpc.insecure_channel('127.0.0.1:50052')).result(timeout=3)"
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  smoke:
+    image: ${IMAGE_ROOT:-ffreis}-onnx-serving:${IMAGE_TAG:-api-grpc-smoke}
+    depends_on:
+      serving-api:
+        condition: service_healthy
+      serving-grpc:
+        condition: service_healthy
+    command:
+      - python
+      - examples/smoke_api_grpc.py
+    environment:
+      SERVING_API_BASE: http://serving-api:8080
+      SERVING_GRPC_TARGET: serving-grpc:50052
+      PYTHONPATH: /app/src
+
+volumes:
+  smoke-model:

@@ -1,17 +1,23 @@
 """Tests for application."""
 
-import types
-from typing import Self
+from types import MethodType as types_MethodType
+from typing import Any, Self, cast
 
-import httpx
-import numpy as np
-import pytest
+from fastapi import Request
+from httpx import ASGITransport as httpx_ASGITransport
+from httpx import AsyncClient as httpx_AsyncClient
+from numpy import array as np_array
+from numpy import float32 as np_float32
+from numpy import zeros as np_zeros
+from pytest import MonkeyPatch as pytest_MonkeyPatch
+from pytest import mark as pytest_mark
+from pytest import raises as pytest_raises
 
 from application import _batch_size, _NoopSpan, create_application
 from config import Settings
 from parsed_types import ParsedInput
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest_mark.unit
 
 
 def test_noop_span_context_manager_contract() -> None:
@@ -24,18 +30,18 @@ def test_noop_span_context_manager_contract() -> None:
 
 def test_batch_size_uses_tensors_and_raises_for_empty_payload() -> None:
     """Verify batch-size extraction from tensors and empty payload errors."""
-    parsed_tensors = ParsedInput(tensors={"x": np.zeros((2, 3), dtype=np.float32)})
+    parsed_tensors = ParsedInput(tensors={"x": np_zeros((2, 3), dtype=np_float32)})
     assert _batch_size(parsed_tensors) == 2
 
-    parsed_scalar_tensor = ParsedInput(tensors={"x": np.array(1.0, dtype=np.float32)})
+    parsed_scalar_tensor = ParsedInput(tensors={"x": np_array(1.0, dtype=np_float32)})
     assert _batch_size(parsed_scalar_tensor) == 1
 
-    with pytest.raises(ValueError, match="no features/tensors"):
+    with pytest_raises(ValueError, match="no features/tensors"):
         _batch_size(ParsedInput())
 
 
 def test_builder_configures_telemetry_when_setup_enabled(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Verify telemetry instrumentation is wired when setup reports enabled."""
     import application as application_module
@@ -54,9 +60,9 @@ def test_builder_configures_telemetry_when_setup_enabled(
     assert instrument_calls
 
 
-@pytest.mark.asyncio
+@pytest_mark.asyncio
 async def test_builder_run_inference_raises_when_adapter_missing(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Raise runtime error when adapter loading leaves adapter unset."""
     import application as application_module
@@ -64,19 +70,23 @@ async def test_builder_run_inference_raises_when_adapter_missing(
     monkeypatch.setenv("OTEL_ENABLED", "false")
     monkeypatch.setenv("PROMETHEUS_ENABLED", "false")
     builder = application_module.InferenceApplicationBuilder(Settings())
-    builder._ensure_adapter_loaded = types.MethodType(
+    builder._ensure_adapter_loaded = types_MethodType(
         lambda self: None,
         builder,
     )
-    with pytest.raises(RuntimeError, match="Adapter failed to load"):
-        await builder._run_inference(  # noqa: SLF001
-            request=object(),  # type: ignore[arg-type]
+    run_inference = cast(
+        Any, application_module.InferenceApplicationBuilder.__dict__["_run_inference"]
+    )
+    with pytest_raises(RuntimeError, match="Adapter failed to load"):
+        await run_inference(
+            builder,
+            request=cast(Request, object()),
             start_time=0.0,
         )
 
 
 def test_readiness_returns_500_when_adapter_stays_none(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Return 500 readiness when loader runs but adapter remains unavailable."""
     import application as application_module
@@ -84,17 +94,23 @@ def test_readiness_returns_500_when_adapter_stays_none(
     monkeypatch.setenv("OTEL_ENABLED", "false")
     monkeypatch.setenv("PROMETHEUS_ENABLED", "false")
     builder = application_module.InferenceApplicationBuilder(Settings())
-    builder._ensure_adapter_loaded = types.MethodType(
+    builder._ensure_adapter_loaded = types_MethodType(
         lambda self: None,
         builder,
     )
-    response = builder._build_readiness_response()  # noqa: SLF001
+    build_readiness_response = cast(
+        Any,
+        application_module.InferenceApplicationBuilder.__dict__[
+            "_build_readiness_response"
+        ],
+    )
+    response = build_readiness_response(builder)
     assert response.status_code == 500
 
 
-@pytest.mark.asyncio
+@pytest_mark.asyncio
 async def test_metrics_fallback_route_when_instrumentator_missing(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest_MonkeyPatch,
 ) -> None:
     """Expose fallback metrics route when instrumentator dependency is missing."""
     import application as application_module
@@ -103,8 +119,8 @@ async def test_metrics_fallback_route_when_instrumentator_missing(
     monkeypatch.setenv("PROMETHEUS_ENABLED", "true")
     monkeypatch.setattr(application_module, "Instrumentator", None)
     application = create_application(Settings())
-    transport = httpx.ASGITransport(app=application)
-    async with httpx.AsyncClient(
+    transport = httpx_ASGITransport(app=application)
+    async with httpx_AsyncClient(
         transport=transport,
         base_url="http://test",
     ) as client:
@@ -113,12 +129,56 @@ async def test_metrics_fallback_route_when_instrumentator_missing(
         assert "byoc_up 1" in response.text
 
 
+@pytest_mark.asyncio
+async def test_swagger_routes_are_disabled_by_default(
+    monkeypatch: pytest_MonkeyPatch,
+) -> None:
+    """Keep docs routes disabled unless explicitly enabled."""
+    monkeypatch.delenv("SWAGGER_ENABLED", raising=False)
+    monkeypatch.setenv("OTEL_ENABLED", "false")
+    monkeypatch.setenv("PROMETHEUS_ENABLED", "false")
+
+    settings = Settings()
+    assert settings.swagger_enabled is False
+
+    application = create_application(settings)
+    transport = httpx_ASGITransport(app=application)
+    async with httpx_AsyncClient(transport=transport, base_url="http://test") as client:
+        docs = await client.get("/docs")
+        spec = await client.get("/openapi.yaml")
+        assert docs.status_code == 404
+        assert spec.status_code == 404
+
+
+@pytest_mark.asyncio
+async def test_swagger_routes_are_enabled_when_configured(
+    monkeypatch: pytest_MonkeyPatch,
+) -> None:
+    """Expose docs routes only when SWAGGER_ENABLED=true."""
+    monkeypatch.setenv("SWAGGER_ENABLED", "true")
+    monkeypatch.setenv("OTEL_ENABLED", "false")
+    monkeypatch.setenv("PROMETHEUS_ENABLED", "false")
+
+    settings = Settings()
+    assert settings.swagger_enabled is True
+
+    application = create_application(settings)
+    transport = httpx_ASGITransport(app=application)
+    async with httpx_AsyncClient(transport=transport, base_url="http://test") as client:
+        docs = await client.get("/docs")
+        spec = await client.get("/openapi.yaml")
+        assert docs.status_code == 200
+        assert "SwaggerUIBundle" in docs.text
+        assert spec.status_code == 200
+        assert "openapi: 3.1.0" in spec.text
+
+
 class TestAppEndpoints:
     """Test suite for TestAppEndpoints."""
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_live_is_process_only_healthcheck(
-        self: Self, client_list: httpx.AsyncClient
+        self: Self, client_list: httpx_AsyncClient
     ) -> None:
         """Verify live is process only healthcheck.
 
@@ -136,9 +196,9 @@ class TestAppEndpoints:
         assert response.status_code == 200
         assert response.text.strip() == ""
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_ready_reports_model_readiness(
-        self: Self, client_list: httpx.AsyncClient
+        self: Self, client_list: httpx_AsyncClient
     ) -> None:
         """Verify ready reports model readiness.
 
@@ -156,8 +216,8 @@ class TestAppEndpoints:
         assert response.status_code == 200
         assert response.text.strip() == ""
 
-    @pytest.mark.asyncio
-    async def test_ping_ok(self: Self, client_list: httpx.AsyncClient) -> None:
+    @pytest_mark.asyncio
+    async def test_ping_ok(self: Self, client_list: httpx_AsyncClient) -> None:
         """Verify ping ok.
 
         Parameters
@@ -174,9 +234,9 @@ class TestAppEndpoints:
         assert r.status_code == 200
         assert r.text.strip() == ""
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_ping_is_alias_for_ready_when_not_ready(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Validate ping is alias for ready when not ready.
 
@@ -208,8 +268,8 @@ class TestAppEndpoints:
             )(),
         )
         application = create_application(Settings())
-        transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
+        transport = httpx_ASGITransport(app=application)
+        async with httpx_AsyncClient(
             transport=transport, base_url="http://test"
         ) as client:
             ready_response = await client.get("/ready")
@@ -217,8 +277,8 @@ class TestAppEndpoints:
             assert ready_response.status_code == 500
             assert ping_response.status_code == 500
 
-    @pytest.mark.asyncio
-    async def test_metrics_exists(self: Self, client_list: httpx.AsyncClient) -> None:
+    @pytest_mark.asyncio
+    async def test_metrics_exists(self: Self, client_list: httpx_AsyncClient) -> None:
         """Verify metrics exists.
 
         Parameters
@@ -235,9 +295,9 @@ class TestAppEndpoints:
         assert r.status_code == 200
         assert "# HELP" in r.text or "# TYPE" in r.text
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_ping_returns_500_when_adapter_fails(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Validate ping returns 500 when adapter fails.
 
@@ -262,16 +322,16 @@ class TestAppEndpoints:
             lambda settings: (_ for _ in ()).throw(RuntimeError("boom")),
         )
         application = create_application(Settings())
-        transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
+        transport = httpx_ASGITransport(app=application)
+        async with httpx_AsyncClient(
             transport=transport, base_url="http://test"
         ) as client:
             r = await client.get("/ping")
             assert r.status_code == 500
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_invocations_csv_basic(
-        self: Self, client_list: httpx.AsyncClient
+        self: Self, client_list: httpx_AsyncClient
     ) -> None:
         """Verify invocations csv basic.
 
@@ -294,9 +354,9 @@ class TestAppEndpoints:
         assert r.headers["content-type"].startswith("application/json")
         assert r.json() == [0, 0]
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_invocations_include_trace_correlation_headers(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Verify invocation responses include trace correlation headers."""
         monkeypatch.setenv("OTEL_ENABLED", "false")
@@ -319,8 +379,8 @@ class TestAppEndpoints:
             lambda: {"trace_id": "a" * 32, "span_id": "b" * 16},
         )
         application = create_application(Settings())
-        transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
+        transport = httpx_ASGITransport(app=application)
+        async with httpx_AsyncClient(
             transport=transport, base_url="http://test"
         ) as client:
             response = await client.post(
@@ -332,9 +392,9 @@ class TestAppEndpoints:
             assert response.headers.get("x-trace-id") == "a" * 32
             assert response.headers.get("x-span-id") == "b" * 16
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_invocations_respects_max_body_bytes(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Validate invocations respects max body bytes.
 
@@ -365,8 +425,8 @@ class TestAppEndpoints:
         )
         application = create_application(Settings())
 
-        transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
+        transport = httpx_ASGITransport(app=application)
+        async with httpx_AsyncClient(
             transport=transport, base_url="http://test"
         ) as client:
             r = await client.post(
@@ -377,9 +437,9 @@ class TestAppEndpoints:
             assert r.status_code == 413
             assert r.json()["error"] == "payload_too_large"
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_invocations_respects_max_records(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Verify invocations respects max records.
 
@@ -410,8 +470,8 @@ class TestAppEndpoints:
         )
         application = create_application(Settings())
 
-        transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
+        transport = httpx_ASGITransport(app=application)
+        async with httpx_AsyncClient(
             transport=transport, base_url="http://test"
         ) as client:
             r = await client.post(
@@ -422,9 +482,9 @@ class TestAppEndpoints:
             assert r.status_code == 400
             assert "too_many_records" in r.json()["error"]
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_sagemaker_header_fallback_content_type_accept(
-        self: Self, client_list: httpx.AsyncClient
+        self: Self, client_list: httpx_AsyncClient
     ) -> None:
         """Validate sagemaker header fallback content type accept.
 
@@ -449,9 +509,9 @@ class TestAppEndpoints:
         assert r.status_code == 200
         assert r.json() == [0]
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_dict_output_forces_json_even_if_accept_csv(
-        self: Self, client_dict: httpx.AsyncClient
+        self: Self, client_dict: httpx_AsyncClient
     ) -> None:
         """Validate dict output forces json even if accept csv.
 
@@ -475,9 +535,9 @@ class TestAppEndpoints:
         body = r.json()
         assert "logits" in body and "proba" in body
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_invocations_returns_400_for_bad_payload(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Validate invocations returns 400 for bad payload.
 
@@ -505,8 +565,8 @@ class TestAppEndpoints:
             )(),
         )
         application = create_application(Settings())
-        transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
+        transport = httpx_ASGITransport(app=application)
+        async with httpx_AsyncClient(
             transport=transport, base_url="http://test"
         ) as client:
             r = await client.post(
@@ -517,9 +577,9 @@ class TestAppEndpoints:
             assert r.status_code == 400
             assert "Unsupported Content-Type" in r.json()["error"]
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_invocations_returns_500_for_adapter_exception(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Validate invocations returns 500 for adapter exception.
 
@@ -552,8 +612,8 @@ class TestAppEndpoints:
             )(),
         )
         application = create_application(Settings())
-        transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
+        transport = httpx_ASGITransport(app=application)
+        async with httpx_AsyncClient(
             transport=transport, base_url="http://test"
         ) as client:
             r = await client.post(
@@ -564,9 +624,9 @@ class TestAppEndpoints:
             assert r.status_code == 500
             assert r.json()["error"] == "internal_server_error"
 
-    @pytest.mark.asyncio
+    @pytest_mark.asyncio
     async def test_invocations_returns_429_when_inflight_exhausted(
-        self: Self, monkeypatch: pytest.MonkeyPatch
+        self: Self, monkeypatch: pytest_MonkeyPatch
     ) -> None:
         """Validate invocations returns 429 when inflight exhausted.
 
@@ -596,8 +656,8 @@ class TestAppEndpoints:
             )(),
         )
         application = create_application(Settings())
-        transport = httpx.ASGITransport(app=application)
-        async with httpx.AsyncClient(
+        transport = httpx_ASGITransport(app=application)
+        async with httpx_AsyncClient(
             transport=transport, base_url="http://test"
         ) as client:
             r = await client.post(

@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import logging
 import os
+from logging import basicConfig as logging_basicConfig
 
 from application import create_application
 from config import Settings
 
 settings = Settings()
 
-logging.basicConfig(
+logging_basicConfig(
     level=settings.log_level,
     format="%(asctime)s %(levelname)s %(name)s - %(message)s",
 )

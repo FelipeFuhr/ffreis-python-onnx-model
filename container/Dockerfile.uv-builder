@@ -1,0 +1,23 @@
+ARG BASE_BUILDER_IMAGE=ffreis/base-builder
+FROM ${BASE_BUILDER_IMAGE}
+
+ARG PYTHON_VERSION=3.13
+
+USER root
+
+RUN mkdir -p /build \
+    && chown appuser:appgroup /build \
+    && chmod 0750 /build
+
+WORKDIR /build
+
+COPY --chown=appuser:appgroup pyproject.toml uv.lock main.py /build/
+COPY --chown=appuser:appgroup src /build/src
+
+RUN uv venv /opt/venv --python ${PYTHON_VERSION} && \
+    . /opt/venv/bin/activate && \
+    uv sync --active --frozen --extra dev
+
+RUN chown -R appuser:appgroup /build /opt/venv
+
+USER appuser:appgroup

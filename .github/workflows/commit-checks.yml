@@ -24,22 +24,23 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install tooling
+      - uses: astral-sh/setup-uv@eac588ad8def6316056a12d4907a9d4d84ff7a3b
+        with:
+          enable-cache: true
+
+      - name: Install tooling (frozen)
         run: |
           set -euo pipefail
-          python -m venv .venv
-          .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install pre-commit
-          .venv/bin/python -m pip install -e ".[dev]"
+          uv sync --frozen --extra dev
 
       - name: Cache pre-commit
         uses: actions/cache@v5
         with:
           path: ~/.cache/pre-commit
-          key: precommit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: precommit-${{ runner.os }}-py313-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: Run pre-commit hooks
-        run: .venv/bin/pre-commit run --all-files --show-diff-on-failure
+        run: uv run --frozen pre-commit run --all-files --show-diff-on-failure
 
       - name: Unit tests
-        run: .venv/bin/python -m pytest -q tests/unit_tests
+        run: uv run --frozen python -m pytest -q tests/unit_tests

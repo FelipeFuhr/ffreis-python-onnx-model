@@ -3,19 +3,24 @@
 from pathlib import Path
 from typing import Self
 
-import numpy as np
-import pytest
+from numpy import asarray as np_asarray
+from numpy import float32 as np_float32
+from pytest import MonkeyPatch as pytest_MonkeyPatch
+from pytest import importorskip as pytest_importorskip
+from pytest import mark as pytest_mark
+from pytest import raises as pytest_raises
 
-onnx = pytest.importorskip("onnx")
-pytest.importorskip("onnxruntime")
+from config import Settings
+from onnx_adapter import OnnxAdapter
+from parsed_types import ParsedInput
 
-from onnx import TensorProto, helper  # noqa: E402
+onnx = pytest_importorskip("onnx")
+pytest_importorskip("onnxruntime")
 
-from config import Settings  # noqa: E402
-from onnx_adapter import OnnxAdapter  # noqa: E402
-from parsed_types import ParsedInput  # noqa: E402
+TensorProto = onnx.TensorProto
+helper = onnx.helper
 
-pytestmark = pytest.mark.unit
+pytestmark = pytest_mark.unit
 
 
 def _write_sum_model(path: Path) -> None:
@@ -43,7 +48,7 @@ class TestOnnxAdapter:
     """Test suite for TestOnnxAdapter."""
 
     def test_raises_when_model_is_missing(
-        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self: Self, monkeypatch: pytest_MonkeyPatch, tmp_path: Path
     ) -> None:
         """Validate raises when model is missing.
 
@@ -61,11 +66,11 @@ class TestOnnxAdapter:
         """
         monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
         monkeypatch.setenv("MODEL_TYPE", "onnx")
-        with pytest.raises(FileNotFoundError, match="ONNX model not found"):
+        with pytest_raises(FileNotFoundError, match="ONNX model not found"):
             OnnxAdapter(Settings())
 
     def test_predicts_from_tabular_input(
-        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self: Self, monkeypatch: pytest_MonkeyPatch, tmp_path: Path
     ) -> None:
         """Validate predicts from tabular input.
 
@@ -86,12 +91,12 @@ class TestOnnxAdapter:
         monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
         monkeypatch.setenv("MODEL_TYPE", "onnx")
         adapter = OnnxAdapter(Settings())
-        inp = ParsedInput(X=np.asarray([[1, 2, 3], [4, 5, 6]], dtype=np.float32))
+        inp = ParsedInput(X=np_asarray([[1, 2, 3], [4, 5, 6]], dtype=np_float32))
         preds = adapter.predict(inp)
         assert preds == [[6.0], [15.0]]
 
     def test_predicts_from_tensor_inputs_with_output_map(
-        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self: Self, monkeypatch: pytest_MonkeyPatch, tmp_path: Path
     ) -> None:
         """Validate predicts from tensor inputs with output map.
 
@@ -114,7 +119,7 @@ class TestOnnxAdapter:
         monkeypatch.setenv("ONNX_OUTPUT_MAP_JSON", '{"double":"y1","raw":"y2"}')
         adapter = OnnxAdapter(Settings())
         inp = ParsedInput(
-            tensors={"x": np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)}
+            tensors={"x": np_asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np_float32)}
         )
         preds = adapter.predict(inp)
         assert preds == {
@@ -123,7 +128,7 @@ class TestOnnxAdapter:
         }
 
     def test_selects_named_output(
-        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self: Self, monkeypatch: pytest_MonkeyPatch, tmp_path: Path
     ) -> None:
         """Verify selects named output.
 
@@ -145,12 +150,12 @@ class TestOnnxAdapter:
         monkeypatch.setenv("MODEL_TYPE", "onnx")
         monkeypatch.setenv("ONNX_OUTPUT_NAME", "y2")
         adapter = OnnxAdapter(Settings())
-        inp = ParsedInput(X=np.asarray([[2.0, 4.0]], dtype=np.float32))
+        inp = ParsedInput(X=np_asarray([[2.0, 4.0]], dtype=np_float32))
         preds = adapter.predict(inp)
         assert preds == [[2.0, 4.0]]
 
     def test_selects_output_by_index(
-        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self: Self, monkeypatch: pytest_MonkeyPatch, tmp_path: Path
     ) -> None:
         """Validate selects output by index.
 
@@ -172,12 +177,12 @@ class TestOnnxAdapter:
         monkeypatch.setenv("MODEL_TYPE", "onnx")
         monkeypatch.setenv("ONNX_OUTPUT_INDEX", "1")
         adapter = OnnxAdapter(Settings())
-        inp = ParsedInput(X=np.asarray([[2.0, 4.0]], dtype=np.float32))
+        inp = ParsedInput(X=np_asarray([[2.0, 4.0]], dtype=np_float32))
         preds = adapter.predict(inp)
         assert preds == [[2.0, 4.0]]
 
     def test_rejects_empty_input(
-        self: Self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self: Self, monkeypatch: pytest_MonkeyPatch, tmp_path: Path
     ) -> None:
         """Verify rejects empty input.
 
@@ -198,7 +203,7 @@ class TestOnnxAdapter:
         monkeypatch.setenv("SM_MODEL_DIR", str(tmp_path))
         monkeypatch.setenv("MODEL_TYPE", "onnx")
         adapter = OnnxAdapter(Settings())
-        with pytest.raises(
+        with pytest_raises(
             ValueError, match="requires ParsedInput.X or ParsedInput.tensors"
         ):
             adapter.predict(ParsedInput())
