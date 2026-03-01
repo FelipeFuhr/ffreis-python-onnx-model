@@ -8,6 +8,7 @@ on:
 jobs:
   run-example-scripts:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -43,6 +44,7 @@ jobs:
 
   build-example-containers:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
