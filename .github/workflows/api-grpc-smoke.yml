@@ -14,7 +14,7 @@ jobs:
 
       - name: Build and run compose smoke test
         run: |
-          docker compose -f examples/docker-compose.api-grpc.yml up --build --abort-on-container-exit --exit-code-from smoke
+          docker compose -f examples/docker-compose.api-grpc.yml up --build --exit-code-from smoke
 
       - name: Tear down compose stack
         if: always()
